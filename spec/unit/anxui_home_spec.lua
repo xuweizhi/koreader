@@ -1,5 +1,5 @@
 describe("Anx UI manual home", function()
-    local AnxUI, UIManager, plugin, registered
+    local AnxUI, UIManager, plugin, registered, old_start
     local sample = "spec/front/unit/data/juliet.epub"
 
     setup(function()
@@ -10,6 +10,8 @@ describe("Anx UI manual home", function()
     end)
 
     before_each(function()
+        old_start = G_reader_settings:readSetting("start_with")
+        G_reader_settings:delSetting("start_with")
         G_reader_settings:delSetting("anxui")
         G_reader_settings:delSetting("plugins_disabled")
         registered = nil
@@ -28,6 +30,45 @@ describe("Anx UI manual home", function()
         UIManager:quit()
         G_reader_settings:delSetting("anxui")
         G_reader_settings:delSetting("plugins_disabled")
+        G_reader_settings:saveSetting("start_with", old_start)
+    end)
+
+    it("adds one native startup radio choice, synchronizes appearance and removes only its own entry on stop", function()
+        local menu = require("apps/filemanager/filemanagermenu"):getStartWithMenuTable()
+        local original_text = menu.text_func
+        local items = {start_with=menu}
+        plugin:addToMainMenu(items); plugin:addToMainMenu(items)
+        assert.are.equal(6, #menu.sub_item_table)
+        local entry = menu.sub_item_table[6]
+        assert.are.equal(plugin.translate("Anx library"), entry.text)
+        assert.is_true(entry.radio)
+        entry.callback()
+        assert.is_true(entry.checked_func())
+        assert.is_truthy(menu.text_func():find(entry.text, 1, true))
+        plugin:showPreferences()
+        assert.is_truthy(plugin.preferences_menu.item_table[6].text:find("✓", 1, true))
+        plugin.preferences_menu.item_table[6].callback()
+        assert.is_false(entry.checked_func())
+        plugin:showPreferences()
+        plugin.preferences_menu.item_table[6].callback()
+        assert.is_true(entry.checked_func())
+        for index = 1, 5 do
+            menu.sub_item_table[index].callback()
+            assert.is_false(plugin.settings:options().startup)
+            assert.are.equal(original_text(), menu.text_func())
+            for other, item in ipairs(menu.sub_item_table) do
+                assert.are.equal(index == other, item.checked_func())
+            end
+        end
+        plugin:stopPlugin()
+        assert.are.equal(5, #menu.sub_item_table)
+        assert.are.equal(original_text, menu.text_func)
+        assert.is_nil(menu.anxui_startup_entry)
+        local selected = G_reader_settings:readSetting("start_with")
+        local _, reason = entry.callback()
+        assert.are.equal("stale_session", reason)
+        assert.are.equal(selected, G_reader_settings:readSetting("start_with"))
+        assert.is_false(entry.enabled_func())
     end)
 
     it("registers a manual entry without opening a window at startup", function()

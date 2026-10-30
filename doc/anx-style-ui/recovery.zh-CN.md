@@ -11,6 +11,7 @@
 | 导入书架与扫描目录 | 原 `collection.lua` 的专属 Anx 书单及其 `anxui_scan_roots` 设置 | 原版可继续打开该书单；原书和批注保持原位置 |
 | 阅读统计 | 原 `statistics.sqlite3` 与统计插件 | Anx 仅查询已保存区间；没有第二个计时器 |
 | UI 选项 | 原全局配置 `settings.reader.lua` 中的 `anxui` 命名空间 | 可以保留，原版忽略该命名空间 |
+| 初始界面 | 原全局配置 `start_with`；选择 Anx 时为 `anxui` | 插件禁用或移除时原启动流程回到文件浏览器；也可在原初始界面菜单重新选择其他首页 |
 | 跨书笔记索引 | 设置目录 `anxui-notes.sqlite3` | 可删除重建；它不是原笔记 |
 | 封面与书籍信息 | 复用原 coverbrowser 的缓存 | 继续由原插件管理 |
 | AI 配置、凭据、对话 | 可选 KOAssistant 自身管理 | 不复制到 Anx 配置；独立保留/卸载 |

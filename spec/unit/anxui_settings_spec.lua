@@ -48,6 +48,51 @@ describe("Anx UI settings and capabilities", function()
         assert.is_nil(Settings.new(root):recoveryReason())
     end)
 
+    it("migrates an opted-in legacy file manager startup once without losing other settings", function()
+        root.data.anxui = {schema=1, startup=true, mode="gray", extension="keep"}
+        settings:migrateStartup()
+        assert.are.equal("anxui", root.data.start_with)
+        assert.is_true(settings:options().startup)
+        assert.same({schema=1, mode="gray", extension="keep"}, root.data.anxui)
+        settings:migrateStartup()
+        assert.are.equal(1, root.writes)
+        assert.same({keep=true}, root.data.unrelated)
+    end)
+
+    it("preserves native startup choices and does not revive a discarded legacy switch", function()
+        for _, mode in ipairs({"last", "history", "favorites", "folder_shortcuts"}) do
+            root.data.start_with = mode
+            root.data.anxui = {schema=1, startup=true}
+            settings:migrateStartup()
+            assert.are.equal(mode, root.data.start_with)
+            assert.is_false(settings:options().startup)
+            root.data.start_with = "filemanager"
+            settings:migrateStartup()
+            assert.is_false(settings:options().startup)
+        end
+        root.data.anxui = {schema=99, startup=true}
+        local writes = root.writes
+        settings:migrateStartup()
+        assert.are.equal(writes, root.writes)
+        assert.is_true(root.data.anxui.startup)
+    end)
+
+    it("uses the native startup setting for both the appearance toggle and menu selection", function()
+        root.data.start_with = "history"
+        assert.is_true(settings:update("startup", true))
+        assert.are.equal("anxui", root.data.start_with)
+        assert.is_true(Settings.new(root):options().startup)
+        settings:update("startup", false)
+        assert.are.equal("filemanager", root.data.start_with)
+        root.data.start_with = "favorites"
+        settings:update("startup", false)
+        assert.are.equal("favorites", root.data.start_with)
+        root.data.start_with = "anxui"
+        assert.is_true(settings:options().startup)
+        root.data.start_with = "filemanager"
+        assert.is_false(settings:options().startup)
+    end)
+
     it("distinguishes disabled cached instances from missing context or methods", function()
         local ui = { statistics = { onShowReaderProgress = function() end } }
         assert.are.equal("available", Capabilities.plugin(ui, "statistics", "onShowReaderProgress").state)

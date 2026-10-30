@@ -20,6 +20,8 @@ function AnxUI:init()
     self.translate = self:module("i18n")
     self.settings = self:module("settings").new()
     self.recovery_reason = self.settings:recoveryReason()
+    local disabled = G_reader_settings:readSetting("plugins_disabled")
+    if not (type(disabled) == "table" and disabled.anxui) then self.settings:migrateStartup() end
     local options = self.settings:options()
     self.startup_candidate = self:module("startup").shouldOpen(options, {
         first_owner = first_owner, is_reader = self.ui.document ~= nil, recovery = self.recovery_reason,
@@ -27,7 +29,6 @@ function AnxUI:init()
         original_start = G_reader_settings:readSetting("start_with", "filemanager"), arguments = arg,
     })
     first_owner = false
-    local disabled = G_reader_settings:readSetting("plugins_disabled")
     if type(disabled) == "table" and disabled.anxui then
         self.stopped = true
         return
@@ -42,6 +43,9 @@ function AnxUI:module(name)
 end
 
 function AnxUI:addToMainMenu(menu_items)
+    if not self.stopped then
+        self:module("startup").extendMenu(menu_items.start_with, self.settings, self.translate, self.scope)
+    end
     -- Menu order tables are the native plugin extension point. Only add our
     -- own IDs; disabled plugins contribute no items, and user menu orders can
     -- still override these defaults. Never retain an owner in these tables.
@@ -605,7 +609,7 @@ function AnxUI:showPreferences()
         if self.stopped then return end
         self.settings:update(key, value)
         if self.home then
-            self.home.theme = self:module("theme").new(self.settings:options())
+            self.home.theme = self:module("theme").shelf(self.settings:options())
             self.home:rebuild()
         end
     end

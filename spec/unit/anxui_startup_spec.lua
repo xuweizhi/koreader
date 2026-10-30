@@ -3,12 +3,12 @@ describe("Anx startup policy", function()
     setup(function() policy = dofile("plugins/anxui.koplugin/startup.lua") end)
     before_each(function()
         context = {first_owner = true, is_reader = false, guide_shown = true,
-            original_start = "filemanager", arguments = {"-d", "-v"}}
+            original_start = "anxui", arguments = {"-d", "-v"}}
     end)
-    it("opens only when opted in and the original file manager is the launch target", function()
+    it("opens only when Anx is the selected native startup target", function()
         assert.is_false(policy.shouldOpen({}, context))
         assert.is_true(policy.shouldOpen({startup = true}, context))
-        for _, mode in ipairs({"last", "history", "favorites", "folder_shortcuts"}) do
+        for _, mode in ipairs({"filemanager", "last", "history", "favorites", "folder_shortcuts"}) do
             context.original_start = mode
             assert.is_false(policy.shouldOpen({startup = true}, context))
         end

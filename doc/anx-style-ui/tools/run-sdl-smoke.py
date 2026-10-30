@@ -20,10 +20,10 @@ def main():
     parser.add_argument("--book", type=Path, required=True)
     parser.add_argument("--runtime", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
-    parser.add_argument("--scenario", choices=("baseline", "classic_home", "home", "components", "entry_points", "shelf_import", "library", "large_library", "replace", "resize", "startup", "reader_tools", "note_index", "format", "advanced", "statistics", "settings_groups", "assistant", "plugins", "visual", "broken", "broken_classic", "file_actions", "roundtrip", "init_failure", "settings", "home_failure"), default="baseline")
+    parser.add_argument("--scenario", choices=("baseline", "classic_home", "home", "components", "entry_points", "shelf_import", "library", "large_library", "replace", "resize", "startup", "startup_menu", "reader_tools", "note_index", "format", "advanced", "statistics", "settings_groups", "assistant", "plugins", "visual", "broken", "broken_classic", "file_actions", "roundtrip", "init_failure", "settings", "home_failure"), default="baseline")
     parser.add_argument("--assistant-case", choices=("absent", "installed"), default="absent")
     parser.add_argument("--library-count", type=int, choices=(1000, 5000), default=5000)
-    startup_cases = ("library", "classic", "last", "history", "favorites", "folder_shortcuts", "guide", "explicit_file", "explicit_dir", "recovery", "disabled", "missing_last")
+    startup_cases = ("library", "classic", "last", "history", "favorites", "folder_shortcuts", "guide", "explicit_file", "explicit_dir", "recovery", "disabled", "missing_last", "native_library", "native_guide", "native_explicit_file", "native_explicit_dir", "native_recovery", "native_disabled")
     parser.add_argument("--startup-case", choices=(*startup_cases, "all"), default="library")
     parser.add_argument("--samples", type=int, default=1, help="fresh-process/configuration samples, run sequentially")
     parser.add_argument("--width", type=int, default=540)
@@ -162,7 +162,7 @@ def main():
         (dictionary / "fixture.idx").write_bytes(index)
         (dictionary / "fixture.ifo").write_text("StarDict's dict ifo file\nversion=2.4.2\nbookname=Anx fixture dictionary\nwordcount=1\nidxfilesize=" + str(len(index)) + "\nsametypesequence=m\n")
     settings = {
-        "plugins_disabled": {"anxui": args.scenario in ("baseline", "classic_home", "broken_classic") or (args.scenario == "startup" and args.startup_case == "disabled")},
+        "plugins_disabled": {"anxui": args.scenario in ("baseline", "classic_home", "broken_classic") or (args.scenario == "startup" and args.startup_case in ("disabled", "native_disabled"))},
         "extra_plugin_paths": [],
         "color_rendering": True,
         "language": args.language,
@@ -184,10 +184,14 @@ def main():
         mode = args.startup_case if args.startup_case in ("last", "history", "favorites", "folder_shortcuts") else "filemanager"
         if args.startup_case == "missing_last":
             mode = "last"
+        if args.startup_case.startswith("native_"):
+            mode = "anxui"
         startup_settings = ', start_with = ' + json.dumps(mode) + ', lastfile = ' + json.dumps(str(book) + ('.missing' if args.startup_case == 'missing_last' else ''), ensure_ascii=False)
-        if args.startup_case != "guide":
+        if args.startup_case not in ("guide", "native_guide"):
             startup_settings += ', quickstart_shown_version = 9999999999'
         settings["startup_case"] = args.startup_case
+    elif args.scenario == "startup_menu":
+        startup_settings = ', start_with = "filemanager", quickstart_shown_version = 9999999999'
     # Explicit Lua, rather than treating a JSON object as Lua source.
     (args.runtime / "settings.reader.lua").write_text(
         'return { plugins_disabled = { anxui = '
@@ -196,8 +200,8 @@ def main():
         'color_rendering = true, language = ' + json.dumps(args.language)
         + ', anxui = { mode = ' + json.dumps(args.theme) + ', large_text = '
         + ("true" if args.large_text else "false")
-        + ', startup = ' + ('true' if args.scenario == 'startup' and args.startup_case != 'classic' else 'false')
-        + ', opening = ' + ('true' if args.scenario == 'startup' and args.startup_case == 'recovery' else 'false')
+        + ', startup = ' + ('true' if args.scenario == 'startup' and args.startup_case != 'classic' and not args.startup_case.startswith('native_') else 'false')
+        + ', opening = ' + ('true' if args.scenario == 'startup' and args.startup_case in ('recovery', 'native_recovery') else 'false')
         + ' }' + startup_settings + ', home_dir = '
         + json.dumps(str(books), ensure_ascii=False)
         + ", lastdir = " + json.dumps(str(books), ensure_ascii=False) + " }\n"
@@ -226,6 +230,7 @@ def main():
     source_paths += [Path(__file__).with_name(name) for name in ("plugins-smoke.lua", "plugins-manifest.lua")]
     source_paths += [Path(__file__).with_name("visual-smoke.lua")]
     source_paths += [Path(__file__).with_name("entry-smoke.lua"), Path(__file__).with_name("shelf-smoke.lua")]
+    source_paths += [Path(__file__).with_name("startup-menu-smoke.lua")]
     result["source_files"] = {
         str(path.relative_to(repo)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in source_paths
@@ -247,6 +252,8 @@ def main():
     phases = [args.scenario, restart_phases[args.scenario]] if args.scenario in restart_phases else [args.scenario]
     if args.scenario == "plugins":
         phases = ["plugins", "plugins_disabled", "plugins_enabled"]
+    elif args.scenario == "startup_menu":
+        phases = ["startup_menu", "startup_menu_selected", "startup_menu_classic"]
     for phase in phases:
         phase_evidence = args.evidence / phase
         phase_evidence.mkdir(exist_ok=True)
@@ -254,7 +261,10 @@ def main():
         target = book if phase in ("baseline", "reopen") else books
         targets = [str(target)]
         if phase == "startup":
-            targets = [str(book)] if args.startup_case == "explicit_file" else [str(books)] if args.startup_case == "explicit_dir" else []
+            case = args.startup_case.removeprefix("native_")
+            targets = [str(book)] if case == "explicit_file" else [str(books)] if case == "explicit_dir" else []
+        elif phase.startswith("startup_menu"):
+            targets = []
         invocation = ["xvfb-run", "-a", "-s", "-screen 0 1440x1000x24 -nolisten tcp", *command, *targets]
         with (phase_evidence / "application.log").open("w") as log:
             env["ANX_SMOKE_LAUNCH_MONOTONIC"] = str(time.monotonic())

@@ -391,8 +391,15 @@ local function fileActions(fm)
 end
 
 UIManager:scheduleIn(3.5, function() step(function()
+    if scenario:match("^startup_menu") then
+        dofile("/data/koreader/doc/anx-style-ui/tools/startup-menu-smoke.lua"){
+            fm=assert(FileManager.instance), step=step, shot=shot, input=input,
+            finish=finish, evidence=evidence, scenario=scenario,
+        }
+        return
+    end
     if scenario == "startup" then
-        local case = assert(os.getenv("ANX_SMOKE_STARTUP_CASE"))
+        local case = assert(os.getenv("ANX_SMOKE_STARTUP_CASE")):gsub("^native_", "")
         local fm, reader = FileManager.instance, ReaderUI.instance
         if case == "missing_last" then
             assert(not fm and not reader)
