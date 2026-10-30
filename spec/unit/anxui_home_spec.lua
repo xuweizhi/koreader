@@ -14,6 +14,7 @@ describe("Anx UI manual home", function()
         G_reader_settings:delSetting("plugins_disabled")
         registered = nil
         plugin = AnxUI:new{
+            home_state = {source = "directory"}, -- These legacy lifecycle cases use a file-browser fixture.
             ui = {
                 menu = {
                     registerToMainMenu = function(_, item) registered = item end,
@@ -310,5 +311,51 @@ describe("Anx UI manual home", function()
         current.callback(); current.hold_callback()
         assert.are.equal(current.item.file, opened[2])
         assert.are.equal(current.item.file, held[2])
+    end)
+
+    it("defaults to the persistent library and rejects import actions retained from a closed home", function()
+        plugin.home_state = nil
+        plugin:showHome()
+        local home = plugin.home
+        assert.are.equal("library", home.source)
+        home:showOptions()
+        home.options_menu.item_table[3].callback()
+        assert.are.equal("recent", home.sort)
+        home:showOptions()
+        assert.are.equal(plugin.translate("Descending order"), home.options_menu.item_table[6].text)
+        home.options_menu.item_table[6].callback()
+        assert.is_true(home.reverse)
+        home:showSources()
+        home.options_menu.item_table[1].callback()
+        assert.are.equal("library", home.source)
+        plugin:closeHome()
+        local _, reason = home.on_import()
+        assert.are.equal("stale_session", reason)
+        local __, scan_reason = home.on_scan()
+        assert.are.equal("stale_session", scan_reason)
+        assert.is_nil(plugin.home)
+    end)
+
+    it("isolates picker selection and cancels picker and confirmation callbacks on close", function()
+        plugin.ui.file_chooser = {path="spec/front/unit/data"}
+        plugin.ui.folder_shortcuts = {getShortcutFullName=function() end, hasFolderShortcut=function() return false end}
+        plugin.ui.selected_files = {original=true}
+        plugin:showHome()
+        plugin.home.on_import()
+        local importer, picker = plugin.home.importer, plugin.home.importer.picker
+        assert.is_not_nil(picker)
+        assert.are_not.equal(plugin.ui.selected_files, picker.ui.selected_files)
+        local stale = picker.onLeftButtonTap
+        UIManager:close(picker)
+        local _, reason = stale()
+        assert.are.equal("stale_session", reason)
+        assert.same({original=true}, plugin.ui.selected_files)
+        importer:confirmScan({"spec/front/unit/data"})
+        local dialog = importer.scan_confirmation
+        local scan = dialog.buttons[1][2].callback
+        UIManager:close(dialog)
+        local __, scan_reason = scan()
+        assert.are.equal("stale_session", scan_reason)
+        assert.is_nil(importer.operation)
     end)
 end)

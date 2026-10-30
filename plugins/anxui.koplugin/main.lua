@@ -440,12 +440,17 @@ function AnxUI:showHome()
             load_source = function(source, collection) return self:getBookItems(source, collection) end,
             on_open_book = page_scope:guard(function(file) self:openBook(file) end),
             on_book_actions = page_scope:guard(function(file) self:showBookActions(file) end),
-            theme = self:module("theme").new(self.settings:options()),
-            new_theme = function() return self:module("theme").new(self.settings:options()) end,
+            theme = self:module("theme").shelf(self.settings:options()),
+            new_theme = function() return self:module("theme").shelf(self.settings:options()) end,
             widgets = self:module("widgets"), translate = self.translate,
             on_preferences = function() self:showSettings() end,
             on_statistics = function() self:showStatistics() end,
             on_notes = function() self:showNoteLibrary() end,
+            on_assistant = function() self:showAssistant() end,
+            on_sync = function() self:showSettings("sync") end,
+            on_import = page_scope:guard(function() self:libraryImporter():choose(false) end),
+            on_scan = page_scope:guard(function() self:libraryImporter():choose(true) end),
+            on_rescan = page_scope:guard(function() self:libraryImporter():confirmScan(self:module("shelf").roots()) end),
             on_continue = function()
                 local file = G_reader_settings:readSetting("lastfile")
                 if file then self:openBook(file) end
@@ -648,8 +653,19 @@ function AnxUI:getBookItems(source, collection)
     -- Keep the full-library snapshot free of per-item closures. Actions are
     -- bound only to the visible cards and expire with their render scope. The
     -- scratch array belongs to this owner and is refreshed on every load.
+    if source == "library" then source, collection = "collection", self:module("shelf").collection(false) end
     self.book_items = self:module("library").snapshot(self.ui, source, collection, self.book_items)
     return self.book_items
+end
+
+function AnxUI:libraryImporter()
+    if not self.home.importer then
+        local path = self.ui.file_chooser and self.ui.file_chooser.path
+            or G_reader_settings:readSetting("home_dir")
+            or require("apps/filemanager/filemanagerutil").getHomeFolder()
+        self.home.importer = self:module("importer").new(self.home, self:module("shelf"), self:module("lifecycle").new, path, self.ui)
+    end
+    return self.home.importer
 end
 
 function AnxUI:showBookActions(file)
@@ -682,6 +698,23 @@ function AnxUI:showBookActions(file)
                 self.ui.file_chooser:changeToPath(folder, file)
                 self.ui.file_chooser:onFileHold{path = file, text = file:match("([^/]+)$"), is_file = true}
             end) },
+            { text = _("Remove from bookshelf"),
+                enabled = (function()
+                    local name = self:module("shelf").collection(false)
+                    return name ~= nil and require("readcollection"):isFileInCollection(file, name)
+                end)(),
+                callback = action(function()
+                    local confirm = require("ui/widget/confirmbox"):new{
+                        text = _("Remove this book from the bookshelf? The ebook file and reading data will be kept."),
+                        ok_text = _("Remove from bookshelf"),
+                        ok_callback = self.home.scope:guard(function()
+                            local name = self:module("shelf").collection(false)
+                            if name then require("readcollection"):removeItem(file, name) end
+                            self.home:loadItems(); self.home:rebuild()
+                        end),
+                    }
+                    UIManager:show(self.home.scope:own(confirm))
+                end) },
         },
     }
     local original_close = dialog.onCloseWidget

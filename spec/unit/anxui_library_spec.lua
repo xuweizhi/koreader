@@ -122,4 +122,16 @@ describe("Anx library read adapters", function()
         assert.are.equal(0, #scratch)
         assert.are.equal(3, #ui.file_chooser.item_table)
     end)
+
+    it("combines reading status with search and supports author, progress and reversed import order", function()
+        local a = {file="/a.epub", text="Alpha", authors="Zulu", order=1, progress={status="complete", percent=1}}
+        local b = {file="/b.epub", text="Beta", authors="Alpha", order=2, progress={status="reading", percent=.3}}
+        local c = {file="/c.epub", text="Gamma", order=3, progress={status="new"}}
+        assert.same({a}, Library.query({a,b,c}, "alpha", "title", "complete"))
+        assert.same({}, Library.query({a,b,c}, "Zulu", "title", "reading"))
+        assert.same({b}, Library.query({a,b,c}, "", "title", "reading"))
+        assert.same({c,b,a}, Library.query({a,b,c}, "", "author"))
+        assert.same({c,b,a}, Library.query({a,b,c}, "", "progress"))
+        assert.same({c,b,a}, Library.query({a,b,c}, "", "native", nil, true))
+    end)
 end)

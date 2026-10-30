@@ -3,10 +3,10 @@
   "plan_revision": 2,
   "record_kind": "implementation_progress",
   "implementation_started": true,
-  "updated_at": "2026-10-30T04:20:01.246718+00:00",
-  "current_batch": "W40",
+  "updated_at": "2026-10-30T07:17:28.960281+00:00",
+  "current_batch": "W41",
   "next_batch": "W36",
-  "next_action": "增强经典界面返回Anx入口，验证真实菜单与启停；以独立版本重打ARM64 APK，保留旧候选包。",
+  "next_action": "W41书架增量已完成。后续可在授权Android设备验证覆盖安装、触摸导入/扫描与阅读往返；原实机和服务待测项继续单列。",
   "planning_reference": {
     "koreader": {
       "path": "/data/koreader",
@@ -214,7 +214,7 @@
       ],
       "blocked_reason": null,
       "verified_scope": "W33 基线完整本地前端99模块838/838例，Anx59/59；619 Lua零警告错误、尺寸/gettext通过，仅原shell两处失败；书库/文件动作、四尺寸视觉与焦点、12恢复阶段W33 源码通过；正式性能full02通过。候选限定Linux本地，不包含实机和真实服务。",
-      "current_source_status": "W40 targeted UI update verified; full gate remains scoped to linux-candidate-02. New plugin/source archives use snapshot stage."
+      "current_source_status": "W41 targeted checks verified; full G5-local evidence remains scoped to W33/linux-candidate-02. See W41 summary for current plugin hashes and ARM64 package."
     },
     "G5-release": {
       "requires": [
@@ -1072,17 +1072,39 @@
       "source_snapshot": "/data/koreader-anx-work/evidence/W40-entry/summary.json",
       "verified_scope": "本次两处置顶中文加粗菜单增量：Anx 60/60、两尺寸真实SDL共8次点击、禁用回调、ARM64构建签名和资源/版本/证书核对通过。未重跑旧全量性能或Android运行。",
       "artifacts": "/data/koreader-anx-work/artifacts/android-entry-01/artifacts.json"
+    },
+    "W41": {
+      "status": "verified",
+      "depends_on": [
+        "W40"
+      ],
+      "user_request": "书架尽量保持Anx Reader的样式细节，支持手动导入和扫描电子书文件夹",
+      "scope": "紧凑搜索/添加/排序、阅读状态筛选、封面网格、五项悬浮导航；持久书架、多选导入、可取消递归扫描与去重；不改变阅读引擎和批注数据。",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W41-bookshelf/summary.json",
+        "/data/koreader-anx-work/evidence/W41-bookshelf/narrow-final02/result.json",
+        "/data/koreader-anx-work/evidence/W41-bookshelf/wide-final02/result.json",
+        "/data/koreader-anx-work/evidence/W41-bookshelf/landscape-final02/result.json",
+        "/data/koreader-anx-work/evidence/W41-bookshelf/english-final02/result.json",
+        "/data/koreader-anx-work/evidence/W34/packages/arm64-bookshelf-01/package.json",
+        "/data/koreader-anx-work/artifacts/android-bookshelf-01/artifacts.json"
+      ],
+      "next_action": "W41书架增量已完成。后续可在授权Android设备验证覆盖安装、触摸导入/扫描与阅读往返；原实机和服务待测项继续单列。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W41-bookshelf/summary.json",
+      "artifacts": "/data/koreader-anx-work/artifacts/android-bookshelf-01/artifacts.json",
+      "source_artifacts": "/data/koreader-anx-work/artifacts/bookshelf-update-01/artifacts.json",
+      "verified_scope": "Anx 69/69单元、28个Lua零警告错误、4种配置5个真实SDL进程64张截图；多选/扫描/去重/取消/重启数据、布局与原阅读回归；ARM64构建签名及源码/版本/证书核对。未复测Android运行或旧完整矩阵。"
     }
   },
   "handoff": {
-    "last_verified_batch": "W40",
-    "last_valid_evidence": "/data/koreader-anx-work/evidence/W40-entry/summary.json",
+    "last_verified_batch": "W41",
+    "last_valid_evidence": "/data/koreader-anx-work/evidence/W41-bookshelf/summary.json",
     "remaining_issues": [
       "W36 Android实机",
       "W37 墨水屏实机",
       "W38 真实AI服务",
       "W39/G5-release需对应外部验证完成后签收"
     ],
-    "next_safe_action": "本次入口更新已完成并交付 android-entry-01；后续根据授权目标设备完成 W36/W37，真实 AI 服务配置就绪后进行 W38。不得将旧 W35 模拟器结果当作 anxui2 的运行验证。"
+    "next_safe_action": "W41书架增量已完成。后续可在授权Android设备验证覆盖安装、触摸导入/扫描与阅读往返；原实机和服务待测项继续单列。"
   }
 }

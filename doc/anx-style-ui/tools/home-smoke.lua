@@ -102,6 +102,9 @@ local function openFromMenu(callback)
         print("ANX_SMOKE_HOME_PAINT_MS", elapsed)
         step(function()
             assert(fm.anxui.home, "menu did not open Anx home")
+            if scenario ~= "shelf_import" and scenario ~= "shelf_reopen" then
+                fm.anxui.home:setSource("directory") -- legacy scenarios use the current-folder fixture
+            end
             shot("anx-home")
             callback(fm)
         end)
@@ -525,6 +528,13 @@ UIManager:scheduleIn(3.5, function() step(function()
         return
     end
     openFromMenu(function(fm)
+        if scenario == "shelf_import" or scenario == "shelf_reopen" then
+            dofile("/data/koreader/doc/anx-style-ui/tools/shelf-smoke.lua"){
+                fm=fm, step=step, shot=shot, input=input, selectBook=selectBook,
+                finish=finish, evidence=evidence, book=book, scenario=scenario,
+            }
+            return
+        end
         if scenario == "entry_points" then
             dofile("/data/koreader/doc/anx-style-ui/tools/entry-smoke.lua"){
                 fm = fm, step = step, shot = shot, input = input, selectBook = selectBook,

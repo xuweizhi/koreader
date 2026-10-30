@@ -4,7 +4,6 @@ local FocusManager = require("ui/widget/focusmanager")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
-local HorizontalSpan = require("ui/widget/horizontalspan")
 local InputDialog = require("ui/widget/inputdialog")
 local OverlapGroup = require("ui/widget/overlapgroup")
 local UIManager = require("ui/uimanager")
@@ -27,17 +26,21 @@ end
 function Home:init()
     local state = self.state or {}
     self.query, self.page = state.query or "", state.page or 1
-    self.source, self.collection = state.source or "directory", state.collection
+    self.source, self.collection = state.source or "library", state.collection
     self.sort, self.list_mode = state.sort or "native", state.list_mode == true
     self.selected_file = state.selected_file
+    self.status, self.reverse = state.status, state.reverse == true
     self:loadItems()
     self.key_events.Close = { { Device.input.group.Back } }
+    self.key_events.NextPage = { { Device.input.group.PgFwd } }
+    self.key_events.PreviousPage = { { Device.input.group.PgBack } }
     self:rebuild()
 end
 
 function Home:viewState()
     return { query = self.query, page = self.page, source = self.source, collection = self.collection,
-        sort = self.sort, list_mode = self.list_mode, selected_file = self.selected_file }
+        sort = self.sort, list_mode = self.list_mode, selected_file = self.selected_file,
+        status = self.status, reverse = self.reverse }
 end
 
 function Home:loadItems()
@@ -45,6 +48,7 @@ function Home:loadItems()
     self.source_scope = self.new_scope()
     self.item_table = self.load_source(self.source, self.collection)
     self.library.enrich(self.item_table, self.source_scope, self.source_scope:guard(function() self:rebuild() end))
+    self:loadProgress()
 end
 
 function Home:setSource(source, collection)
@@ -54,67 +58,93 @@ function Home:setSource(source, collection)
     self:rebuild()
 end
 
+function Home:loadProgress()
+    if self.progress_scope then self.progress_scope:close() end
+    self.progress_scope = self.new_scope()
+    self.loading_status = self.status ~= nil or self.sort == "progress"
+    if self.loading_status then
+        self.library.enrichProgress(self.item_table, self.progress_scope, self.progress_scope:guard(function()
+            self.loading_status = false
+            self:rebuild()
+        end))
+    end
+end
+
+function Home:setStatus(status)
+    self.status = self.status ~= status and status or nil
+    self.page, self.selected_file = 1, nil
+    self:loadProgress()
+    self:rebuild()
+end
+
 function Home:rebuild()
     if self.closed then return end
     if self[1] then self:clear() end
     if self.render_scope then self.render_scope:close() end
-    self.cards, self.layout = nil, nil
     self.render_scope = self.new_scope()
     self.covers = self.new_covers(self.render_scope, self.theme.gray)
     local t, W, _ = self.theme, self.widgets, self.translate
     local s = t.s
     local width, height = Screen:getWidth(), Screen:getHeight()
-    self.dimen = Geom:new{ w = width, h = height }
-    self.wide = width >= s(720)
-    local margin, gap, rail = s(16), s(12), self.wide and s(112) or 0
+    self.dimen = Geom:new{w=width, h=height}
+    self.wide = width > s(600) and height >= s(360 * t.text_scale)
+    local margin, gap, rail = s(20), s(20), self.wide and s(104) or 0
+    local x, control = margin + rail, t.touch
     local content_width = width - margin * 2 - rail
-    local control = t.touch
-    local body = OverlapGroup:new{ dimen = self.dimen:copy(), allow_mirroring = false }
-    local function place(widget, x, y)
-        widget.overlap_offset = { x, y }
-        table.insert(body, widget)
+    local body = OverlapGroup:new{dimen=self.dimen:copy(), allow_mirroring=false}
+    local function place(widget, left, top)
+        widget.overlap_offset = {left, top}
+        body[#body + 1] = widget
         return widget
     end
-    local x = margin + rail
-    local close = W.button("×", control, t, function() self:onClose() end, { parent = self })
-    local classic_width = math.max(control, s(96))
-    local classic = W.button(_("Classic"), classic_width, t, function() self:onClose() end, {parent = self})
-    local title_width = content_width - control - gap - (self.wide and 0 or classic_width + gap)
-    place(W.text(_("Library"), t, t.title, title_width, true), x, margin + s(6))
-    place(close, width - margin - control, margin)
-    if not self.wide then place(classic, width - margin - control - gap - classic_width, margin) end
-    local source_title = self.source == "recent" and _("Recent") or self.source == "favorites" and _("Favorites")
-        or self.source == "collection" and self.collection or _("Current folder")
-    place(W.text(source_title, t, t.small, content_width, false, true), x, margin + control + s(4))
-    self.layout = { self.wide and {close} or {classic, close} }
+    self.controls = {}
+    local search_width = content_width - 2 * control - s(16)
+    local search = W.search(self.query == "" and _("Search books") or self.query, search_width, t,
+        function() self:showSearch() end, self)
+    local add = W.iconButton("plus", _("Add books"), t, function() self:showAddMenu() end, self)
+    local sort = W.iconButton("appbar.menu", _("Sort and library options"), t, function() self:showOptions() end, self)
+    place(search, x, margin)
+    place(add, width - margin - 2 * control - s(8), margin)
+    place(sort, width - margin - control, margin)
+    self.controls.search, self.controls.add, self.controls.sort = search, add, sort
+    self.layout = {{search, add, sort}}
 
-    local search_width = self.wide and math.min(s(480), content_width - classic_width - gap) or content_width
-    local search = W.button(self.query == "" and _("Search books") or self.query, search_width, t,
-        function() self:showSearch() end, { parent = self })
-    local search_y = margin + control + s(28 * t.text_scale)
-    place(search, x, search_y)
-    if self.wide then place(classic, width - margin - classic_width, search_y) end
-    table.insert(self.layout, self.wide and {search, classic} or {search})
-    local tabs, tabs_y = {}, search_y + control + gap
-    local tab_width = math.floor((content_width - gap * 3) / 4)
-    for index, entry in ipairs({ {"directory", "Folder"}, {"recent", "Recent"}, {"favorites", "Favorites"}, {"more", "More"} }) do
-        local button = W.button(_(entry[2]), tab_width, t, function()
-            if entry[1] == "more" then self:showOptions() else self:setSource(entry[1]) end
-        end, { selected = self.source == entry[1], parent = self })
-        place(button, x + (index - 1) * (tab_width + gap), tabs_y)
-        tabs[#tabs + 1] = button
+    local filter_y, filter_gap = margin + control + s(10), s(8)
+    local filter_width = math.floor((content_width - control - filter_gap * 3) / 3)
+    local filters = {}
+    for index, entry in ipairs({{"complete", "Finished"}, {"reading", "In progress"}, {"new", "Not started"}}) do
+        local button = W.chip(_(entry[2]), filter_width, t, function() self:setStatus(entry[1]) end,
+            self.status == entry[1], self)
+        place(button, x + (index - 1) * (filter_width + filter_gap), filter_y)
+        filters[#filters + 1] = button
+        self.controls[entry[1]] = button
     end
-    table.insert(self.layout, tabs)
-    self.filtered = self.library.query(self.item_table, self.query, self.sort)
-    local top = tabs_y + control + gap
-    local footer_y = height - margin - control - (self.wide and 0 or control + s(16) + gap)
-    local available = footer_y - top - gap
-    local columns = math.max(1, math.floor((content_width + gap) / (s(144 * t.text_scale) + gap)))
-    if self.list_mode then columns = 1 end
+    local sources = W.iconButton("appbar.filebrowser", _("Library sources and collections"), t,
+        function() self:showSources() end, self)
+    place(sources, width - margin - control, filter_y)
+    filters[#filters + 1] = sources
+    self.controls.sources = sources
+    self.layout[#self.layout + 1] = filters
+    self.filtered = self.library.query(self.item_table, self.query, self.sort, self.status, self.reverse)
+    local top = filter_y + control + s(16)
+    if self.source ~= "library" then
+        local label = self.source == "recent" and _("Recent") or self.source == "favorites" and _("Favorites")
+            or self.source == "collection" and self.collection or _("Current folder")
+        place(W.text(label, t, t.small, content_width, false, true), x, top)
+        top = top + s(26 * t.text_scale)
+    end
+    local nav_height = math.max(control, s(52 * t.text_scale)) + s(12)
+    local footer_height = self.wide and control or s(18)
+    local footer_y = height - margin - footer_height - (self.wide and 0 or nav_height + s(6))
+    local available = math.max(control, footer_y - top - s(8))
+    local list_mode = self.list_mode or available < s(150 * t.text_scale)
+    local columns = list_mode and 1 or math.max(1, math.floor((width - rail) / Screen:scaleByDPI(120 * t.text_scale)))
     local card_width = math.floor((content_width - (columns - 1) * gap) / columns)
-    local card_height = math.min(available, math.floor(card_width * 1.25) + s(88 * t.text_scale))
-    if self.list_mode then card_height = math.max(t.touch, s(100 * t.text_scale)) end
-    local rows = math.max(1, math.floor((available + gap) / (card_height + gap)))
+    local card_height = list_mode and math.min(available, s(100 * t.text_scale))
+        or math.min(available, math.floor(card_width * 2.1))
+    local row_gap = s(30)
+    local rows = math.max(1, math.floor((available + row_gap) / (card_height * (list_mode and 1 or .85) + row_gap)))
+    card_height = math.min(card_height, math.floor((available - (rows - 1) * row_gap) / rows))
     self.perpage = rows * columns
     if self.selected_file then
         for index, item in ipairs(self.filtered) do
@@ -125,140 +155,123 @@ function Home:rebuild()
     visible, self.page, self.page_count = self.library.page(self.filtered, self.page, self.perpage)
     self.cards = {}
     if #self.filtered == 0 then
-        local message = self.query == "" and _("No books in this view") or _("No matching books")
-        local action = W.button(self.query == "" and _("File browser") or _("Clear search"),
-            math.min(content_width, s(280)), t, function()
-                if self.query == "" then self:onClose() else self.query = ""; self:rebuild() end
-            end, { parent = self })
-        local empty = VerticalGroup:new{
-            W.text(message, t, t.heading, content_width, true),
-            VerticalSpan:new{ width = s(16) }, action,
-        }
-        place(CenterContainer:new{ dimen = Geom:new{ w = content_width, h = available }, empty }, x, top)
-        table.insert(self.layout, { action })
+        local empty = VerticalGroup:new{}
+        local has_filter = self.query ~= "" or self.status ~= nil
+        local message = self.loading_status and _("Reading book status…")
+            or has_filter and _("No matching books") or _("Your bookshelf is empty")
+        if available > s(220) then
+            empty[#empty + 1] = W.text("(´。＿。｀)", t, 32, content_width, false, true)
+            empty[#empty + 1] = VerticalSpan:new{width=s(16)}
+        end
+        local compact = available < s(120 * t.text_scale)
+        empty[#empty + 1] = W.text(message, t, compact and t.small or t.heading, content_width, true)
+        empty[#empty + 1] = VerticalSpan:new{width=s(compact and 4 or 12)}
+        local button_width = math.min(content_width, s(280))
+        local action = W.button(has_filter and _("Clear filters") or _("Import ebooks"), button_width, t, function()
+            if has_filter then self.query, self.status = "", nil; self:loadProgress(); self:rebuild()
+            elseif self.on_import then self.on_import() end
+        end, {parent=self})
+        empty[#empty + 1] = action
+        self.layout[#self.layout + 1] = {action}
+        if not has_filter and self.on_scan and available > s(170) then
+            local scan = W.button(_("Scan ebook folder"), button_width, t, self.on_scan, {parent=self})
+            empty[#empty + 1] = VerticalSpan:new{width=s(8)}
+            empty[#empty + 1] = scan
+            self.layout[#self.layout + 1] = {scan}
+        end
+        place(CenterContainer:new{dimen=Geom:new{w=content_width, h=available}, empty}, x, top)
     else
         for row = 1, rows do
             local focus_row = {}
-            for col = 1, columns do
-                local item = visible[(row - 1) * columns + col]
+            for column = 1, columns do
+                local item = visible[(row - 1) * columns + column]
                 if item then
                     local file = item.file
                     local card = W.Card:new{
-                        item = item, theme = t, translate = _, width = card_width, height = card_height, show_parent = self,
-                        list_mode = self.list_mode, progress = self.library.progress(item.file),
-                        callback = self.render_scope:guard(function() return self.on_open_book(file) end),
-                        hold_callback = self.render_scope:guard(function() return self.on_book_actions(file) end),
+                        item=item, theme=t, translate=_, width=card_width, height=card_height, show_parent=self,
+                        list_mode=list_mode, progress=item.progress or self.library.progress(file),
+                        callback=self.render_scope:guard(function() return self.on_open_book(file) end),
+                        hold_callback=self.render_scope:guard(function() return self.on_book_actions(file) end),
                     }
-                    place(card, x + (col - 1) * (card_width + gap), top + (row - 1) * (card_height + gap))
-                    table.insert(focus_row, card)
-                    table.insert(self.cards, card)
+                    place(card, x + (column - 1) * (card_width + gap), top + (row - 1) * (card_height + row_gap))
+                    focus_row[#focus_row + 1], self.cards[#self.cards + 1] = card, card
                 end
             end
-            if #focus_row > 0 then table.insert(self.layout, focus_row) end
+            if #focus_row > 0 then self.layout[#self.layout + 1] = focus_row end
         end
     end
-    local previous = W.button("‹", control, t, function() self:changePage(-1) end,
-        { enabled = self.page > 1, parent = self })
-    local following = W.button("›", control, t, function() self:changePage(1) end,
-        { enabled = self.page < self.page_count, parent = self })
-    place(previous, x, footer_y)
-    place(following, width - margin - control, footer_y)
+    local footer_inset = self.wide and control + gap or 0
     place(CenterContainer:new{
-        dimen = Geom:new{ w = content_width - 2 * (control + gap), h = control },
+        dimen=Geom:new{w=content_width - 2 * footer_inset, h=footer_height},
         W.text(string.format("%d / %d  ·  %d %s", self.page, self.page_count, #self.filtered, _("books")),
-            t, t.small, content_width - 2 * (control + gap), false, true),
-    }, x + control + gap, footer_y)
-    table.insert(self.layout, { previous, following })
-
-    local nav_width = self.wide and s(80) or math.min(content_width, s(360))
-    local nav_items = 1 + (self.on_notes and 1 or 0) + (self.on_statistics and 1 or 0) + (self.on_preferences and 1 or 0)
-    local nav_button_width = self.wide and nav_width or math.floor((nav_width - s(16) - s(4) * (nav_items - 1)) / nav_items)
-    local first = W.navigation(_("Library"), "book.opened", nav_button_width, t,
-        function() self.query = ""; self.page = 1; self:rebuild() end, { selected = true, parent = self })
-    local preferences = self.on_preferences and W.navigation(_("Settings"), "appbar.settings", nav_button_width, t,
-        self.scope:guard(self.on_preferences), { parent = self })
-    local notes = self.on_notes and W.navigation(_("Notes"), "edit", nav_button_width, t,
-        self.scope:guard(self.on_notes), {parent = self})
-    local statistics = self.on_statistics and W.navigation(_("Stats"), "appbar.pageview", nav_button_width, t,
-        self.scope:guard(self.on_statistics), {parent = self})
-    local nav
+            t, 12 * t.text_scale, content_width - 2 * footer_inset, false, true),
+    }, x + footer_inset, footer_y)
     if self.wide then
-        nav = VerticalGroup:new{ first }
-    else
-        nav = HorizontalGroup:new{ first }
+        local previous = W.iconButton("chevron.left", _("Previous page"), t, function() self:changePage(-1) end, self)
+        local following = W.iconButton("chevron.right", _("Next page"), t, function() self:changePage(1) end, self)
+        place(previous, x, footer_y); place(following, width - margin - control, footer_y)
+        self.layout[#self.layout + 1] = {previous, following}
     end
-    if notes then
-        table.insert(nav, self.wide and VerticalSpan:new{ width = s(12) } or HorizontalSpan:new{ width = s(4) })
-        table.insert(nav, notes)
-    end
-    if statistics then
-        table.insert(nav, self.wide and VerticalSpan:new{ width = s(12) } or HorizontalSpan:new{ width = s(4) })
-        table.insert(nav, statistics)
-    end
-    if preferences then
-        table.insert(nav, self.wide and VerticalSpan:new{ width = s(12) } or HorizontalSpan:new{ width = s(4) })
-        table.insert(nav, preferences)
+
+    local entries = {{"Library", "book.opened", function() self:setSource("library") end}}
+    if self.on_statistics then entries[#entries + 1] = {"Stats", "appbar.pageview", self.on_statistics} end
+    if self.on_assistant then entries[#entries + 1] = {"AI", "star.full", self.on_assistant} end
+    if self.on_notes then entries[#entries + 1] = {"Notes", "edit", self.on_notes} end
+    if self.on_preferences then entries[#entries + 1] = {"Settings", "appbar.settings", self.on_preferences} end
+    local nav_width = self.wide and s(68) or math.min(content_width, s(400))
+    local button_width = self.wide and nav_width or math.floor((nav_width - s(12)) / #entries)
+    local nav = self.wide and VerticalGroup:new{} or HorizontalGroup:new{}
+    local nav_layout = {}
+    for index, entry in ipairs(entries) do
+        local button = W.navigation(_(entry[1]), entry[2], button_width, t, self.scope:guard(entry[3]),
+            {selected=index == 1, parent=self})
+        if self.wide and index > 1 then nav[#nav + 1] = VerticalSpan:new{width=s(14)} end
+        nav[#nav + 1], nav_layout[#nav_layout + 1] = button, button
     end
     local nav_frame = FrameContainer:new{
-        padding = s(8), bordersize = 0, background = t.surface, radius = t.nav_radius, nav,
+        padding=s(6), bordersize=1, color=t.outline, background=t.surface, radius=t.nav_radius, nav,
     }
     place(nav_frame, self.wide and margin or math.floor((width - nav_frame:getSize().w) / 2),
-        self.wide and margin or height - margin - nav_frame:getSize().h)
-    local nav_layout = {first}
-    if notes then nav_layout[#nav_layout + 1] = notes end
-    if statistics then nav_layout[#nav_layout + 1] = statistics end
-    if preferences then nav_layout[#nav_layout + 1] = preferences end
-    table.insert(self.layout, nav_layout)
-    self[1] = FrameContainer:new{ padding = 0, bordersize = 0, background = t.background, body }
-    self.selected = { x = 1, y = 1 }
+        self.wide and math.floor((height - nav_frame:getSize().h) / 2) or height - margin - nav_frame:getSize().h)
+    self.layout[#self.layout + 1] = nav_layout
+    self[1] = FrameContainer:new{padding=0, bordersize=0, background=t.background, body}
+    self.selected = {x=1, y=1}
     if self.selected_file then
-        for y, row in ipairs(self.layout) do
-            for column, widget in ipairs(row) do
-                if widget.item and widget.item.file == self.selected_file then self.selected = {x = column, y = y} end
+        for row, controls in ipairs(self.layout) do
+            for column, widget in ipairs(controls) do
+                if widget.item and widget.item.file == self.selected_file then self.selected = {x=column, y=row} end
             end
         end
     end
     self:refocusWidget()
+    self.ges_events.SwipeShelf = {require("ui/gesturerange"):new{ges="swipe", range=self.dimen}}
     UIManager:setDirty(self, "ui")
     self.covers:load(visible, self.render_scope:guard(function(item, info)
-        for __, card in ipairs(self.cards) do
-            if card.item == item then card:updateInfo(info) end
-        end
+        for _, card in ipairs(self.cards) do if card.item == item then card:updateInfo(info) end end
     end))
     collectRetiredWidgets()
 end
 
-function Home:showOptions()
+function Home:onSwipeShelf(_, gesture)
+    if gesture.direction == "north" or gesture.direction == "west" then self:changePage(1)
+    elseif gesture.direction == "south" or gesture.direction == "east" then self:changePage(-1) end
+    return true
+end
+
+function Home:onNextPage() self:changePage(1); return true end
+function Home:onPreviousPage() self:changePage(-1); return true end
+
+function Home:showMenu(title, entries)
     if self.closed or self.options_menu then return end
-    local _ = self.translate
-    local menu, items
+    local menu, items = nil, {}
     local menu_scope = self.new_scope()
-    local function action(callback)
-        return menu_scope:guard(function()
+    for _, entry in ipairs(entries) do
+        items[#items + 1] = {text=entry.text, enabled=entry.enabled, callback=menu_scope:guard(function()
             UIManager:close(menu)
-            callback()
-        end)
+            entry.callback()
+        end)}
     end
-    items = {
-        { text = self.list_mode and _("Grid view") or _("List view"), callback = action(function()
-            self.list_mode = not self.list_mode; self.page = 1; self:rebuild()
-        end) },
-        { text = _("Sort by title"), callback = action(function() self.sort = "title"; self.page = 1; self:rebuild() end) },
-        { text = _("Original order"), callback = action(function() self.sort = "native"; self.page = 1; self:rebuild() end) },
-        { text = _("Refresh"), callback = action(function()
-            self:loadItems(); self:rebuild()
-        end) },
-    }
-    for __, name in ipairs(self.library.collections()) do
-        items[#items + 1] = { text = _("Collection") .. ": " .. name,
-            callback = action(function() self:setSource("collection", name) end) }
-    end
-    if self.on_continue then
-        items[#items + 1] = { text = _("Continue reading"),
-            enabled = G_reader_settings:readSetting("lastfile") ~= nil,
-            callback = action(self.on_continue) }
-    end
-    menu = require("ui/widget/menu"):new{ title = _("Library"), item_table = items }
+    menu = require("ui/widget/menu"):new{title=title, item_table=items}
     local original_close = menu.onCloseWidget
     menu.onCloseWidget = function(widget)
         menu_scope:close()
@@ -267,6 +280,54 @@ function Home:showOptions()
     end
     self.options_menu = menu
     UIManager:show(self.scope:own(menu))
+end
+
+function Home:showAddMenu()
+    local _ = self.translate
+    local entries = {
+        {text=_("Import ebooks"), callback=self.on_import or function() end},
+        {text=_("Scan ebook folder"), callback=self.on_scan or function() end},
+    }
+    if self.on_rescan then entries[#entries + 1] = {text=_("Rescan saved folders"), callback=self.on_rescan} end
+    self:showMenu(_("Add books"), entries)
+end
+
+function Home:showSources()
+    local _ = self.translate
+    local entries = {}
+    for __, source in ipairs({{"library", "All books"}, {"directory", "Current folder"}, {"recent", "Recent"}, {"favorites", "Favorites"}}) do
+        entries[#entries + 1] = {text=_(source[2]), callback=function() self:setSource(source[1]) end}
+    end
+    for __, name in ipairs(self.library.collections()) do
+        entries[#entries + 1] = {text=_("Collection") .. ": " .. name,
+            callback=function() self:setSource("collection", name) end}
+    end
+    self:showMenu(_("Library sources and collections"), entries)
+end
+
+function Home:showOptions()
+    local _ = self.translate
+    local entries = {}
+    for __, order in ipairs({{"title", "Title"}, {"author", "Author"}, {"recent", "Last read"},
+            {"progress", "Reading progress"}, {"native", "Import order"}}) do
+        entries[#entries + 1] = {text=(self.sort == order[1] and "✓ " or "") .. _(order[2]), callback=function()
+            self.sort, self.page, self.selected_file = order[1], 1, nil
+            self:loadProgress(); self:rebuild()
+        end}
+    end
+    local descending = self.reverse ~= (self.sort == "recent")
+    entries[#entries + 1] = {text=descending and _("Descending order") or _("Ascending order"), callback=function()
+        self.reverse, self.page, self.selected_file = not self.reverse, 1, nil; self:rebuild()
+    end}
+    entries[#entries + 1] = {text=self.list_mode and _("Grid view") or _("List view"), callback=function()
+        self.list_mode, self.page = not self.list_mode, 1; self:rebuild()
+    end}
+    entries[#entries + 1] = {text=_("Refresh"), callback=function() self:loadItems(); self:rebuild() end}
+    if self.on_continue then entries[#entries + 1] = {text=_("Continue reading"),
+        enabled=G_reader_settings:readSetting("lastfile") ~= nil, callback=self.on_continue} end
+    if self.on_sync then entries[#entries + 1] = {text=_("Sync settings"), callback=self.on_sync} end
+    entries[#entries + 1] = {text=_("Classic interface"), callback=function() self:onClose() end}
+    self:showMenu(_("Sort and library options"), entries)
 end
 
 function Home:paintTo(bb, x, y)
@@ -342,6 +403,7 @@ function Home:onCloseWidget()
     self.closed = true
     self.scope:close()
     if self.source_scope then self.source_scope:close() end
+    if self.progress_scope then self.progress_scope:close() end
     self.error_dialog, self.search_dialog = nil, nil
     self:clear()
     if self.render_scope then self.render_scope:close() end

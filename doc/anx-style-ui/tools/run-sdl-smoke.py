@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--book", type=Path, required=True)
     parser.add_argument("--runtime", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
-    parser.add_argument("--scenario", choices=("baseline", "classic_home", "home", "components", "entry_points", "library", "large_library", "replace", "resize", "startup", "reader_tools", "note_index", "format", "advanced", "statistics", "settings_groups", "assistant", "plugins", "visual", "broken", "broken_classic", "file_actions", "roundtrip", "init_failure", "settings", "home_failure"), default="baseline")
+    parser.add_argument("--scenario", choices=("baseline", "classic_home", "home", "components", "entry_points", "shelf_import", "library", "large_library", "replace", "resize", "startup", "reader_tools", "note_index", "format", "advanced", "statistics", "settings_groups", "assistant", "plugins", "visual", "broken", "broken_classic", "file_actions", "roundtrip", "init_failure", "settings", "home_failure"), default="baseline")
     parser.add_argument("--assistant-case", choices=("absent", "installed"), default="absent")
     parser.add_argument("--library-count", type=int, choices=(1000, 5000), default=5000)
     startup_cases = ("library", "classic", "last", "history", "favorites", "folder_shortcuts", "guide", "explicit_file", "explicit_dir", "recovery", "disabled", "missing_last")
@@ -106,6 +106,24 @@ def main():
     book = books / args.book.name
     shutil.copy2(args.book, book)
     (books / "empty").mkdir()
+    if args.scenario == "shelf_import":
+        import re
+        scan = books / "scan"
+        scan.mkdir()
+        titles = ["海边的清晨", "山野来信", "城市漫步", "读书与生活", "时间的形状", "星空笔记", "旅行手记"]
+        for index, title in enumerate(titles, 1):
+            with zipfile.ZipFile(book) as original, zipfile.ZipFile(scan / f"{index:02d}-{title}.epub", "w") as clone:
+                for info in original.infolist():
+                    data = original.read(info.filename)
+                    if info.filename.endswith(".opf"):
+                        data = re.sub(r"<dc:title>.*?</dc:title>", "<dc:title>" + title + "</dc:title>", data.decode()).encode()
+                    clone.writestr(info, data)
+        (scan / "cover.jpg").write_bytes(b"not an ebook")
+        (scan / ".hidden").mkdir()
+        shutil.copy2(book, scan / ".hidden" / "ignored.epub")
+        (scan / "ignored.sdr").mkdir()
+        shutil.copy2(book, scan / "ignored.sdr" / "ignored.epub")
+        os.symlink(scan, scan / "cycle")
     archive = args.runtime / "fixture-archive.zip"
     if args.scenario == "plugins":
         with zipfile.ZipFile(archive, "w") as zf:
@@ -207,7 +225,7 @@ def main():
     source_paths += [Path(__file__).with_name(name) for name in ("reader-smoke.lua", "note-index-smoke.lua", "advanced-smoke.lua", "statistics-smoke.lua", "settings-groups-smoke.lua", "assistant-smoke.lua")]
     source_paths += [Path(__file__).with_name(name) for name in ("plugins-smoke.lua", "plugins-manifest.lua")]
     source_paths += [Path(__file__).with_name("visual-smoke.lua")]
-    source_paths += [Path(__file__).with_name("entry-smoke.lua")]
+    source_paths += [Path(__file__).with_name("entry-smoke.lua"), Path(__file__).with_name("shelf-smoke.lua")]
     result["source_files"] = {
         str(path.relative_to(repo)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in source_paths
@@ -225,7 +243,7 @@ def main():
     result["runs"] = []
     if replacement.exists():
         result["replacement_sha256"] = hashlib.sha256(replacement.read_bytes()).hexdigest()
-    restart_phases = {"roundtrip": "reopen", "format": "reopen", "settings": "settings_reopen", "home_failure": "recovery_resume"}
+    restart_phases = {"shelf_import": "shelf_reopen", "roundtrip": "reopen", "format": "reopen", "settings": "settings_reopen", "home_failure": "recovery_resume"}
     phases = [args.scenario, restart_phases[args.scenario]] if args.scenario in restart_phases else [args.scenario]
     if args.scenario == "plugins":
         phases = ["plugins", "plugins_disabled", "plugins_enabled"]
@@ -273,6 +291,13 @@ def main():
                                         command_args = ["type", "--clearmodifiers", "--delay", "30", action["value"]]
                                     elif action["kind"] == "click":
                                         command_args = ["mousemove", "--window", window, str(action["x"]), str(action["y"]), "click", "1"]
+                                    elif action["kind"] == "swipe":
+                                        command_args = ["mousemove", "--window", window, str(action["x"]), str(action["y"]), "mousedown", "1"]
+                                        for fraction in (.25, .5, .75, 1):
+                                            x = round(action["x"] + fraction * (action["end_x"] - action["x"]))
+                                            y = round(action["y"] + fraction * (action["end_y"] - action["y"]))
+                                            command_args += ["sleep", "0.04", "mousemove", "--window", window, str(x), str(y)]
+                                        command_args += ["mouseup", "1"]
                                     elif action["kind"] == "resize":
                                         command_args = ["windowsize", "--sync", window, str(action["width"]), str(action["height"])]
                                     else:

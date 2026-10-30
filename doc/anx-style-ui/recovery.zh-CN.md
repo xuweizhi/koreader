@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | 阅读位置、书签、划线、备注 | 原 DocSettings/ReaderAnnotation；书籍 sidecar 或原用户选定位置 | 原版继续读取 |
 | 历史、收藏、书单 | 原 ReadHistory/ReadCollection | 原版继续读取 |
+| 导入书架与扫描目录 | 原 `collection.lua` 的专属 Anx 书单及其 `anxui_scan_roots` 设置 | 原版可继续打开该书单；原书和批注保持原位置 |
 | 阅读统计 | 原 `statistics.sqlite3` 与统计插件 | Anx 仅查询已保存区间；没有第二个计时器 |
 | UI 选项 | 原全局配置 `settings.reader.lua` 中的 `anxui` 命名空间 | 可以保留，原版忽略该命名空间 |
 | 跨书笔记索引 | 设置目录 `anxui-notes.sqlite3` | 可删除重建；它不是原笔记 |
@@ -18,7 +19,7 @@
 
 ## 可进入应用时
 
-1. 先从页头返回经典界面。
+1. 先从书架右上角菜单的“经典界面”或系统返回键回到经典界面。
 2. 在原插件管理器里禁用 Anx UI，然后按原提示重启。
 3. 用原书架打开原书，阅读位置与笔记由原模块恢复。
 

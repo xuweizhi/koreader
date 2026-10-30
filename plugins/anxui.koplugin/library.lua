@@ -13,11 +13,13 @@ local Library = {}
 -- and must not alias authoritative input or another live page's working data.
 function Library.snapshot(ui, source, collection, scratch)
     local input, result, seen = {}, scratch or {}, {}
+    local last_read = {}
+    for _, entry in ipairs(ReadHistory.hist or {}) do last_read[entry.file] = entry.time end
     if source == "recent" then
         input = ReadHistory.hist
     elseif source == "favorites" or source == "collection" then
         local name = source == "favorites" and ReadCollection.default_collection_name or collection
-        for _, entry in pairs(ReadCollection.coll[name] or {}) do input[#input + 1] = entry end
+        for _, entry in pairs(ReadCollection.coll and ReadCollection.coll[name] or {}) do input[#input + 1] = entry end
         table.sort(input, function(a, b)
             if (a.order or 0) ~= (b.order or 0) then return (a.order or 0) < (b.order or 0) end
             return a.file < b.file
@@ -42,7 +44,7 @@ function Library.snapshot(ui, source, collection, scratch)
             end
             item.id, item.file = file, file
             item.text = entry.text or file:match("([^/]+)$") or file
-            item.time, item.order = entry.time, count
+            item.time, item.order = entry.time or last_read[file], count
             item.bidi_wrap_func, item.missing = entry.bidi_wrap_func, entry.dim == true
         end
     end
@@ -57,13 +59,14 @@ function Library.collections()
     return result
 end
 
-function Library.query(items, query, sort)
+function Library.query(items, query, sort, status, reverse)
     local result = {}
     query = (query or ""):lower()
     for _, item in ipairs(items) do
-        if query == "" then
+        local match_status = not status or item.progress and item.progress.status == status
+        if match_status and query == "" then
             result[#result + 1] = item
-        else
+        elseif match_status then
             local searchable = (item.text .. "\n" .. (item.title or "") .. "\n" .. (item.authors or "")):lower()
             if searchable:find(query, 1, true) or item.file:lower():find(query, 1, true) then
                 result[#result + 1] = item
@@ -71,10 +74,15 @@ function Library.query(items, query, sort)
         end
     end
     table.sort(result, function(a, b)
+        if reverse then a, b = b, a end
         local a_title, b_title = a.title or a.text, b.title or b.text
         if sort == "title" and a_title ~= b_title then return a_title < b_title end
+        if sort == "author" and (a.authors or "") ~= (b.authors or "") then return (a.authors or "") < (b.authors or "") end
+        if sort == "progress" and (a.progress and a.progress.percent or 0) ~= (b.progress and b.progress.percent or 0) then
+            return (a.progress and a.progress.percent or 0) < (b.progress and b.progress.percent or 0)
+        end
         if sort == "recent" and (a.time or 0) ~= (b.time or 0) then return (a.time or 0) > (b.time or 0) end
-        if sort ~= "title" and sort ~= "recent" and a.order ~= b.order then return a.order < b.order end
+        if sort == "native" and a.order ~= b.order then return a.order < b.order end
         return a.file < b.file
     end)
     return result
@@ -125,7 +133,22 @@ end
 
 function Library.progress(file)
     local info = require("ui/widget/booklist").getBookInfo(file)
-    return { opened = info.been_opened, percent = info.percent_finished }
+    return { opened = info.been_opened, percent = info.percent_finished,
+        status = not info.been_opened and "new" or info.status == "complete" and "complete" or "reading" }
+end
+
+function Library.enrichProgress(items, scope, on_done)
+    local index = 1
+    local function batch()
+        for __ = 1, 40 do
+            local item = items[index]
+            if not item then on_done(); return end
+            item.progress = Library.progress(item.file)
+            index = index + 1
+        end
+        scope:later(.01, batch)
+    end
+    scope:later(.01, batch)
 end
 
 function Library.page(items, number, size)
