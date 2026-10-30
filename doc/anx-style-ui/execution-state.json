@@ -1,0 +1,1088 @@
+{
+  "schema_version": 1,
+  "plan_revision": 2,
+  "record_kind": "implementation_progress",
+  "implementation_started": true,
+  "updated_at": "2026-10-30T04:20:01.246718+00:00",
+  "current_batch": "W40",
+  "next_batch": "W36",
+  "next_action": "增强经典界面返回Anx入口，验证真实菜单与启停；以独立版本重打ARM64 APK，保留旧候选包。",
+  "planning_reference": {
+    "koreader": {
+      "path": "/data/koreader",
+      "head": "dcb50ae439f2acd82aec213063e76739984eacb1"
+    },
+    "anx_reader": {
+      "path": "/data/anx-reader",
+      "head": "0c7fc1ad4551f7dbbeba6a6468f69d830957fa2a"
+    },
+    "note": "规划时的参考版本，不是实施或验证记录；W00 重新探测。"
+  },
+  "defaults": {
+    "implementation": "koreader_lua_anxui_plugin",
+    "development_platform": "linux_sdl",
+    "primary_target": "android_color",
+    "eink_device": null,
+    "ai_integration": "optional_pinned_koassistant_existing_ui",
+    "language": [
+      "zh_CN",
+      "en"
+    ]
+  },
+  "planned_paths": {
+    "workspace": "/data/koreader-anx-work",
+    "evidence_root": "/data/koreader-anx-work/evidence",
+    "baseline_config": "/data/koreader-anx-work/runtime/baseline",
+    "anxui_config": "/data/koreader-anx-work/runtime/anxui",
+    "note": "工作目录、测试书籍和隔离配置根目录已建立；每次实际运行创建独立配置/书籍副本。"
+  },
+  "source_snapshot": "/data/koreader-anx-work/evidence/W33/checks/source-current-final.json",
+  "runtime_commands": {
+    "linux_launch": "env PARALLEL_JOBS=1 KO_HOME=<isolated> ./kodev run -b -W 540 -H 720 -D 160 <copied-book-or-directory>",
+    "focused_frontend_test": "env PARALLEL_JOBS=1 ./kodev test -b -j 1 -o <junit.xml> front pluginloader readerui readerannotation readerbookmark anxui_home",
+    "screenshot_and_input": "tools/run-sdl-smoke.py：真实SDL/Xvfb；组件和resize场景含X11输入，视觉场景含原FocusManager Press；实机输入由W36/W37另验。"
+  },
+  "external_conditions": [
+    {
+      "id": "android_toolchain",
+      "status": "available",
+      "affects": [
+        "W34"
+      ],
+      "required_evidence": "当前代码实际构建成功及包校验值",
+      "probe": "Final ARM64 release exit0 and both ABI packages signed and identity verified."
+    },
+    {
+      "id": "android_emulator",
+      "status": "available",
+      "affects": [
+        "W35"
+      ],
+      "required_evidence": "明确系统镜像与实际交互记录",
+      "probe": "W35 android-candidate-05 passed both phases on Android11/API30/x86_64 software emulator; dedicated AVD stop acknowledged after validation. Historical ANR/tool failures retained."
+    },
+    {
+      "id": "android_test_device",
+      "status": "waiting_for_device",
+      "affects": [
+        "W36"
+      ],
+      "required_evidence": "授权目标设备、系统、包身份和实测结果",
+      "probe": "2026-10-29 adb devices -l: no attached device; requested model/system asynchronously"
+    },
+    {
+      "id": "eink_test_device",
+      "status": "not_probed",
+      "affects": [
+        "W37"
+      ],
+      "required_evidence": "具体实机/固件/刷新配置与实测结果"
+    },
+    {
+      "id": "koassistant_source",
+      "status": "audited",
+      "affects": [
+        "W26",
+        "W27"
+      ],
+      "required_evidence": "固定源码、许可和真实接口审计",
+      "path": "/data/koreader-anx-work/vendor/koassistant.koplugin",
+      "head": "b89a60daf52bc9c3b33419607f48bbecde302461"
+    },
+    {
+      "id": "ai_service",
+      "status": "waiting_for_configuration",
+      "affects": [
+        "W38"
+      ],
+      "required_evidence": "已配置可用服务及真实请求/失败结果；禁止保存密钥",
+      "probe": "Pinned KOAssistant test configuration has no provider credentials; original local composer and selection passed. User asked asynchronously to specify test service or defer; no credentials copied."
+    }
+  ],
+  "gates": {
+    "G0": {
+      "requires": [
+        "W00",
+        "W01",
+        "W02",
+        "W03",
+        "W04"
+      ],
+      "status": "verified",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W04/g0-summary/summary.json",
+        "/data/koreader-anx-work/evidence/W04/g0-summary/performance.json"
+      ],
+      "blocked_reason": null,
+      "verified_scope": "仅原型闭环和 Linux 基线；最终视觉/其他格式/平台/服务未覆盖",
+      "current_implementation_recheck": "W07 EPUB/PDF 与 W08 EPUB 卡片界面往返已重验；各结果保留对应源码快照。"
+    },
+    "G1": {
+      "requires": [
+        "G0",
+        "W05",
+        "W06",
+        "W07",
+        "W08",
+        "W09"
+      ],
+      "allowed_not_applicable": [
+        "W09"
+      ],
+      "status": "verified",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W08/settings-02/result.json",
+        "/data/koreader-anx-work/evidence/W08/recovery/result.json",
+        "/data/koreader-anx-work/evidence/W08/roundtrip/result.json"
+      ],
+      "blocked_reason": null,
+      "verified_scope": "当前卡片页主题、生命周期、设置和恢复；后续新增异步任务须重验生命周期"
+    },
+    "G2": {
+      "requires": [
+        "G1",
+        "W10",
+        "W11",
+        "W12",
+        "W13",
+        "W14",
+        "W15",
+        "W16",
+        "W17"
+      ],
+      "status": "verified",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W15/replace/result.json",
+        "/data/koreader-anx-work/evidence/W17/matrix/matrix.json",
+        "/data/koreader-anx-work/evidence/W01/build/g2-tests.xml"
+      ],
+      "blocked_reason": null,
+      "verified_scope": "Linux SDL书库/收藏/原生文件动作、动态窗口、12种启动分支；性能预算与Android另验。"
+    },
+    "G3": {
+      "requires": [
+        "G2",
+        "W18",
+        "W19",
+        "W20",
+        "W21",
+        "W22",
+        "W23",
+        "W24"
+      ],
+      "status": "verified",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W24/formats-summary.json",
+        "/data/koreader-anx-work/evidence/W24/reader-narrow/result.json",
+        "/data/koreader-anx-work/evidence/W23/index/result.json"
+      ],
+      "blocked_reason": null,
+      "verified_scope": "Linux SDL本地格式/笔记/索引/阅读交互；14样本，30组流程，窄屏灰度大字；OCR识别与设备专属项未测。"
+    },
+    "G4": {
+      "requires": [
+        "G3",
+        "W25",
+        "W26",
+        "W27",
+        "W28",
+        "W29"
+      ],
+      "scope": "Linux 本地接口与防护；真实服务另行验证",
+      "status": "verified",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W29/plugins-02/result.json",
+        "/data/koreader-anx-work/evidence/W27/assistant-selection/result.json",
+        "/data/koreader-anx-work/evidence/W28/groups-02/result.json"
+      ],
+      "blocked_reason": null,
+      "verified_scope": "Linux本地统计/设置/37插件核对和固定可选助手窗口；不含AI或同步/下载服务闭环。"
+    },
+    "G5-local": {
+      "requires": [
+        "G4",
+        "W30",
+        "W31",
+        "W32",
+        "W33"
+      ],
+      "scope": "W33 / linux-candidate-02 的完整 Linux 本地基线",
+      "status": "verified",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W31/full-02/summary.json",
+        "/data/koreader-anx-work/evidence/W33/checks/summary-current.json"
+      ],
+      "blocked_reason": null,
+      "verified_scope": "W33 基线完整本地前端99模块838/838例，Anx59/59；619 Lua零警告错误、尺寸/gettext通过，仅原shell两处失败；书库/文件动作、四尺寸视觉与焦点、12恢复阶段W33 源码通过；正式性能full02通过。候选限定Linux本地，不包含实机和真实服务。",
+      "current_source_status": "W40 targeted UI update verified; full gate remains scoped to linux-candidate-02. New plugin/source archives use snapshot stage."
+    },
+    "G5-release": {
+      "requires": [
+        "G5-local",
+        "W34",
+        "W35",
+        "W36",
+        "W39"
+      ],
+      "conditional_requirements": [
+        {
+          "when": "声明墨水屏实机支持",
+          "requires": [
+            "W37"
+          ]
+        },
+        {
+          "when": "声明真实 AI 服务闭环已验证",
+          "requires": [
+            "W38"
+          ]
+        }
+      ],
+      "scope": "默认 Android 首发与明确列出的实测范围；不自动等同全部批次完成",
+      "status": "blocked",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W35/android-candidate-05/result.json",
+        "/data/koreader-anx-work/artifacts/android-candidate-02/artifacts.json"
+      ],
+      "blocked_reason": "W36缺少授权Android实机；W39仅交付已验证范围候选，尚不能签收Android实机发布。"
+    }
+  },
+  "batches": {
+    "W00": {
+      "depends_on": [],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "两个仓库实际版本、工作区、子模块、Linux 工具/显示环境与测试样本库存；不包含构建或运行",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W00/initial-inventory/inventory.json",
+        "/data/koreader-anx-work/evidence/W00/initial-inventory/initial-documents.sha256"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W01": {
+      "depends_on": [
+        "W00"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "Linux SDL 原版中文 EPUB/PDF 打开、翻页和关闭截图；21 次经典 FileManager 启动采样；5 模块共 41 单元用例通过；kodev check 原有 shell 失败单列",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W01/build/submodules.txt",
+        "/data/koreader-anx-work/evidence/W01/build/environment-notes.txt",
+        "/data/koreader-anx-work/evidence/W01/build/native-build-serial-attempt-1.log",
+        "/data/koreader-anx-work/evidence/W01/build/kodev-check.log",
+        "/data/koreader-anx-work/evidence/W01/build/baseline-check-sources.json",
+        "/data/koreader-anx-work/evidence/W01/build/native-build-serial.log",
+        "/data/koreader-anx-work/evidence/W01/build/kodev-build.log",
+        "/data/koreader-anx-work/evidence/W01/build/focused-tests-network.log",
+        "/data/koreader-anx-work/evidence/W01/build/focused-tests-network.xml",
+        "/data/koreader-anx-work/evidence/W01/build/focused-tests-details.log",
+        "/data/koreader-anx-work/evidence/W01/sdl-epub-02/result.json",
+        "/data/koreader-anx-work/evidence/W01/sdl-pdf-02/result.json",
+        "/data/koreader-anx-work/evidence/W01/startup-20",
+        "/data/koreader-anx-work/evidence/W01/startup-extra-10/samples.json"
+      ],
+      "substeps": [
+        {
+          "id": "W01.1",
+          "status": "verified",
+          "scope": "已安装本地构建和虚拟显示工具；全部子模块已检出锁定 SHA"
+        },
+        {
+          "id": "W01.2",
+          "status": "verified",
+          "scope": "全部原生依赖及标准 kodev build 完成；使用 PARALLEL_JOBS=1。"
+        },
+        {
+          "id": "W01.3",
+          "status": "verified",
+          "scope": "SIGTERM 中断后增量构建成功；未修改构建系统。"
+        }
+      ],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W02": {
+      "depends_on": [
+        "W01"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "G0 手动菜单、单实例首页关闭/重开及原插件管理器禁用；Linux SDL 540×720，尚非 Anx 视觉成品",
+      "source_snapshot": {
+        "plugins/anxui.koplugin/_meta.lua": "0771112a4b1854cb58d59a60932e95164ee69f59984fa3657b482bdbe178567e",
+        "plugins/anxui.koplugin/main.lua": "8b1f4f34187a49d27fcdaa943ddbe5aeb1414b1259ece38a17e145e85f8820e3",
+        "plugins/anxui.koplugin/views/home.lua": "01bfc040e13c2bea934fe7360e0389ec43116b7a10af84de35e4b5e08e6039e0",
+        "spec/unit/anxui_home_spec.lua": "60c57c8a34192a71c41b7ac84e079d0a018fecc012339c5cfd669097a06e035a"
+      },
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W02/sdl-home-01/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/focused-tests-network.xml",
+        "/data/koreader-anx-work/evidence/W02/sdl-home-02/result.json"
+      ],
+      "substeps": [
+        {
+          "id": "W02.1",
+          "status": "implemented",
+          "scope": "W01 编译期间准备三个插件文件；不提前通过依赖或 G0。"
+        }
+      ],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W03": {
+      "depends_on": [
+        "W02"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "G0 EPUB/PDF 新首页开书、原 ReaderUI 返回、经典入口不被接管；真实 SDL，原书签/备注及位置往返",
+      "source_snapshot": {
+        "plugins/anxui.koplugin/_meta.lua": "0771112a4b1854cb58d59a60932e95164ee69f59984fa3657b482bdbe178567e",
+        "plugins/anxui.koplugin/main.lua": "8b1f4f34187a49d27fcdaa943ddbe5aeb1414b1259ece38a17e145e85f8820e3",
+        "plugins/anxui.koplugin/views/home.lua": "01bfc040e13c2bea934fe7360e0389ec43116b7a10af84de35e4b5e08e6039e0",
+        "spec/unit/anxui_home_spec.lua": "60c57c8a34192a71c41b7ac84e079d0a018fecc012339c5cfd669097a06e035a"
+      },
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W04/roundtrip-epub-01/result.json",
+        "/data/koreader-anx-work/evidence/W04/roundtrip-pdf-01/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W04": {
+      "depends_on": [
+        "W03"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "G0 Linux SDL 中文 EPUB/PDF 原书签和备注双向编辑、原锚点/进度重开与进程重启保持；初始化失败/原插件管理禁用可回经典阅读；21 次经典与 20 次原型启动原始采样及预算边界冻结",
+      "source_snapshot": {
+        "plugins/anxui.koplugin/_meta.lua": "0771112a4b1854cb58d59a60932e95164ee69f59984fa3657b482bdbe178567e",
+        "plugins/anxui.koplugin/main.lua": "8b1f4f34187a49d27fcdaa943ddbe5aeb1414b1259ece38a17e145e85f8820e3",
+        "plugins/anxui.koplugin/views/home.lua": "01bfc040e13c2bea934fe7360e0389ec43116b7a10af84de35e4b5e08e6039e0",
+        "spec/unit/anxui_home_spec.lua": "60c57c8a34192a71c41b7ac84e079d0a018fecc012339c5cfd669097a06e035a"
+      },
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W04/roundtrip-epub-01/result.json",
+        "/data/koreader-anx-work/evidence/W04/roundtrip-pdf-01/result.json",
+        "/data/koreader-anx-work/evidence/W04/init-failure-01/result.json",
+        "/data/koreader-anx-work/evidence/W04/g0-summary/summary.json",
+        "/data/koreader-anx-work/evidence/W04/g0-summary/performance.json"
+      ],
+      "substeps": [
+        {
+          "id": "W04.1",
+          "status": "implemented",
+          "scope": "隔离 SDL 回归脚本已编写，覆盖原编辑器数据往返与重新启动、初始化失败；尚未执行，不作为验收证据。"
+        }
+      ],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W05": {
+      "depends_on": [
+        "G0"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "四类目标视觉规格冻结；当前首页的主题、字号、卡片和中英文文案已在真实 SDL 绘制并查看。最终四页仍未实现。",
+      "source_snapshot": null,
+      "evidence": [
+        "doc/anx-style-ui/visual-spec.zh-CN.md",
+        "/data/koreader-anx-work/evidence/W05/theme-home-01/result.json",
+        "/data/koreader-anx-work/evidence/W06/components-color-03/components/anx-home.png"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W06": {
+      "depends_on": [
+        "W05"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "Linux SDL 540×720 彩色中文、1280×800 彩色英文和 360×640 灰度大字长中文的卡片/搜索/空态；真实 X11 键鼠开书/返回；文件移除后的错误提示与退出；窄屏点击区 DPI 下限实测",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W06/components-color-04/result.json",
+        "/data/koreader-anx-work/evidence/W06/components-wide-02/result.json",
+        "/data/koreader-anx-work/evidence/W06/components-narrow-02/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/components-tests.xml"
+      ],
+      "substeps": [
+        {
+          "id": "W06.1",
+          "status": "implemented",
+          "scope": "卡片、搜索、分页、空态、窄屏底部导航与宽屏侧栏；单元 8 用例和手动首页 SDL 通过，真实输入回归进行中"
+        }
+      ],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W07": {
+      "depends_on": [
+        "W04",
+        "W06"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "实例/页面 scope 任务取消、迟到回调和窗口释放；14 个单元用例；真实 EPUB/PDF 原生笔记进度往返和窄屏输入。100 次压力在 W31。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W01/build/lifecycle-tests-final.xml",
+        "/data/koreader-anx-work/evidence/W07/roundtrip-epub/result.json",
+        "/data/koreader-anx-work/evidence/W07/roundtrip-pdf/result.json",
+        "/data/koreader-anx-work/evidence/W07/components-narrow/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W08": {
+      "depends_on": [
+        "W07"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "21 个相关单元用例通过；真实设置重启、页面构造失败后新进程恢复及开书；能力检测兼容原生 HandlerSandbox；当前 EPUB 数据往返通过。原生崩溃与更多配置故障在 W32。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W01/build/settings-tests-final.xml",
+        "/data/koreader-anx-work/evidence/W08/settings-02/result.json",
+        "/data/koreader-anx-work/evidence/W08/recovery/result.json",
+        "/data/koreader-anx-work/evidence/W08/roundtrip/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W09": {
+      "depends_on": [
+        "W02"
+      ],
+      "conditional": true,
+      "status": "not_applicable",
+      "verified_scope": "原插件加载、FileManager.openFile、ReaderUI.onHome、Show/CloseWidget 生命周期已满足当前路径；git diff 为空，没有修改核心。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W08/roundtrip/source.diff",
+        "/data/koreader-anx-work/evidence/W08/roundtrip/result.json",
+        "/data/koreader-anx-work/evidence/W08/recovery/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W10": {
+      "depends_on": [
+        "G1"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "原目录/最近/收藏/命名书单只读快照、路径身份和查询分页；4 单元用例含5000项；真实SDL两本同名异路径与原书单",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W01/build/library-tests.xml",
+        "/data/koreader-anx-work/evidence/W12/library/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W11": {
+      "depends_on": [
+        "W10"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "有界读取原生封面缓存，原生异步提取、所有权取消和页面释放；4项真实SQLite/zstd测试覆盖坏数据/大尺寸/预算；真实PDF缩略图升级。新代码后续回归继续跟踪",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W01/build/covers-tests-02.xml",
+        "/data/koreader-anx-work/evidence/W12/library/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W12": {
+      "depends_on": [
+        "W10",
+        "W11"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "真实目录/最近/收藏/书单的网格列表切换、返回恢复；20轮快速切源取消；中文真实PDF封面。后续新增进度/搜索后需当前版本回归",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W12/library/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W13": {
+      "depends_on": [
+        "W12"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "真实1000/5000文件目录搜索、元数据作者搜索、确定性排序与有界分页；中文窄屏输入、空态与缺失文件。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W01/build/library-complete-tests.xml",
+        "/data/koreader-anx-work/evidence/W13/components-narrow-02/result.json",
+        "/data/koreader-anx-work/evidence/W13/large-1000/result.json",
+        "/data/koreader-anx-work/evidence/W13/large-5000-02/result.json",
+        "/data/koreader-anx-work/evidence/W15/replace/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W14": {
+      "depends_on": [
+        "W12"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "真实键盘长按打开书籍动作；委托原生详情、收藏/书单和原更多菜单，原界面可见同一更改",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W15/files/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W15": {
+      "depends_on": [
+        "W14"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "原生移动/重命名保留历史/收藏/sidecar；同路径外部替换后缓存失效、作者检索更新且新元数据重开正确。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W15/files/result.json",
+        "/data/koreader-anx-work/evidence/W13/components-narrow-02/result.json",
+        "/data/koreader-anx-work/evidence/W15/replace/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W16": {
+      "depends_on": [
+        "W13",
+        "W14",
+        "W07"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "真实X11 540→1280×800→360×640→640×360缩放，保留查询/书籍焦点且按钮在屏内；中文大字、窄屏键鼠，Android输入另测",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W16/resize-02/result.json",
+        "/data/koreader-anx-work/evidence/W13/components-narrow-02/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W17": {
+      "depends_on": [
+        "W15",
+        "W16",
+        "W08"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "Linux真实新进程12种启动分支均通过：新首页/经典/最后阅读/历史/收藏/快捷目录/首次指南/显式文件/显式目录/恢复/禁用/最后文件缺失；Android意图另测",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W17/matrix/matrix.json",
+        "/data/koreader-anx-work/evidence/W01/build/startup-tests.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W18": {
+      "depends_on": [
+        "G2"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "当前ReaderUI/Document身份与scope失效；EPUB/PDF/真实PDF重排快照，原页码和进度读取；过期与错引擎锚点拒绝。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W22/epub/result.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W22/epub/result.json",
+        "/data/koreader-anx-work/evidence/W22/pdf/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/noteindex-tests.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W19": {
+      "depends_on": [
+        "W18"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "真实SDL中文EPUB/PDF工具栏、Esc关闭后原点击翻页，原排版和高级菜单可达；窄屏/大字稍后补测。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W22/epub/result.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W22/epub/result.json",
+        "/data/koreader-anx-work/evidence/W22/pdf/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/noteindex-tests.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W20": {
+      "depends_on": [
+        "W18",
+        "W19"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "真实EPUB章节跳转和原位置返回、原页码输入定位；PDF无目录空态与重排工具栏；脚注等更完整样本W24。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W22/epub/result.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W22/epub/result.json",
+        "/data/koreader-anx-work/evidence/W22/pdf/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/noteindex-tests.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W21": {
+      "depends_on": [
+        "W18",
+        "W19"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "真实EPUB/PDF内存批注筛选、原锚点定位；书签附注与划线类型分开；原UI未保存修改可读。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W22/epub/result.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W22/epub/result.json",
+        "/data/koreader-anx-work/evidence/W22/pdf/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/noteindex-tests.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W22": {
+      "depends_on": [
+        "W21"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "真实EPUB/PDF原生备注编辑/删除及重开；真实文本选区生成划线并经原Text导出，核对摘录和备注；未配置提示。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W22/epub/result.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W22/epub/result.json",
+        "/data/koreader-anx-work/evidence/W22/pdf/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/noteindex-tests.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W23": {
+      "depends_on": [
+        "W22"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "实际同名不同路径书籍在ReaderUI/FileManager之间定位；内存笔记优先、真实Esc取消扫描、清空重建和外部文件改变检查；旧格式/超2MiB sidecar跳过而不写入。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W23/index/result.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W23/index/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/noteindex-tests.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W24": {
+      "depends_on": [
+        "W19",
+        "W20",
+        "W21",
+        "W22",
+        "W23"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "Original open/page/close; Anx toolbar/advanced/current-notes; new/classic note edits and disabled-plugin restart. S01/S02 also native footnote return, fulltext search and actual self-authored offline dictionary. OCR recognition, physical buttons and hardware refresh not covered.",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W24/formats-summary.json",
+        "/data/koreader-anx-work/evidence/W24/reader-narrow/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/g3-unit-tests.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W25": {
+      "depends_on": [
+        "G3"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "真实计时与原统计同口径；20次打开未修改SQLite；原插件管理器禁用后的降级；不包括未结束页面的计时区间。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W25/stats-03/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/settings-groups-tests.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W26": {
+      "depends_on": [
+        "G3"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "固定完整提交、138个运行时Lua文件校验，原设置/选段/取消/凭据/全局钩子审计；不承诺其他版本兼容。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W26/audit/source-manifest.json",
+        "/data/koreader/doc/anx-style-ui/koassistant-audit.zh-CN.md"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W27": {
+      "depends_on": [
+        "W26",
+        "W08",
+        "W19"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "真实固定插件未配置状态、原通用/书籍/选段composer、文本和锚点保持、原设置入口、篡改版本拒绝、缓存实例禁用拒绝及返回关闭；缺失插件与窄屏工具栏验证。未发送模型请求。；补测旋转/会话刷新composer所有权交接与立即返回/禁用清理。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W27/assistant-selection/result.json",
+        "/data/koreader-anx-work/evidence/W27/absent/result.json",
+        "/data/koreader-anx-work/evidence/W27/reader-narrow/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/assistant-tests.xml",
+        "/data/koreader-anx-work/evidence/W33/assistant-refresh-02/result.json",
+        "/data/koreader-anx-work/evidence/W33/checks/assistant-refresh-unit.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W28": {
+      "depends_on": [
+        "G3",
+        "W08"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "书架/阅读器六分组；原生设置写入与读回；原插件管理、进度同步与文件同步入口及禁用状态；服务端同步未测。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W28/groups-02/result.json",
+        "/data/koreader-anx-work/evidence/W01/build/settings-groups-tests.xml"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W29": {
+      "depends_on": [
+        "W25",
+        "W28",
+        "W08"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "37项逐插件记录；33项本地入口/关闭及原管理器禁用重启和启用重启通过，4项原源码/构建条件不适用；33插件+Anx组合。远程和真实硬件未验。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W29/plugins-02/result.json",
+        "/data/koreader/doc/anx-style-ui/plugin-matrix.zh-CN.md"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W30": {
+      "depends_on": [
+        "W16",
+        "W19",
+        "W23",
+        "W25",
+        "W28"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "四尺寸中英文彩色/模拟灰度大字，真实图文导航/笔记/统计/工具栏/设置；原焦点Press路径，44DPI点击区和边界，原阅读/编辑/导出回归，静置无Anx持续刷新；真实设备另验。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W30/icons-portrait-03/result.json",
+        "/data/koreader-anx-work/evidence/W30/icons-narrow-03/result.json",
+        "/data/koreader-anx-work/evidence/W30/icons-landscape-03/result.json",
+        "/data/koreader-anx-work/evidence/W30/icons-wide-03/result.json",
+        "/data/koreader-anx-work/evidence/W30/icons-reader/result.json",
+        "/data/koreader/doc/anx-style-ui/visual-review.zh-CN.md",
+        "/data/koreader-anx-work/evidence/W33/visual-portrait/result.json",
+        "/data/koreader-anx-work/evidence/W33/visual-narrow/result.json",
+        "/data/koreader-anx-work/evidence/W33/visual-landscape/result.json",
+        "/data/koreader-anx-work/evidence/W33/visual-wide/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W31": {
+      "depends_on": [
+        "W30",
+        "W29"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "Linux SDL双主题96进程正式矩阵全部执行/预算通过：各主题经典/Anx20启动，1000/5000书库各100动作/20热开，100次真实翻页及100次开书/返回/工具开关，缓存/RSS/取消/增长均达标。原版8闭包保留初始FM单列，Anx无额外实例/窗口/任务/数据残留；不代表实机性能。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W31/full-02/identity.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W31/pilot-01/summary.json",
+        "/data/koreader-anx-work/evidence/W31/pilot-02/summary.json",
+        "/data/koreader-anx-work/evidence/W31/cancel-diag-01/summary.json",
+        "/data/koreader-anx-work/evidence/W31/owner-diag-02/stability-color-classic-13-01/memory.jsonl",
+        "/data/koreader-anx-work/evidence/W31/pilot-final-01/summary.json",
+        "/data/koreader-anx-work/evidence/W31/gray5000-03/summary.json",
+        "/data/koreader-anx-work/evidence/W31/gray5000-03/identity.json",
+        "/data/koreader-anx-work/evidence/W31/gray5000-04/summary.json",
+        "/data/koreader-anx-work/evidence/W31/gray5000-05/summary.json",
+        "/data/koreader-anx-work/evidence/W31/full-01/summary.json",
+        "/data/koreader-anx-work/evidence/W31/gray-library-06/summary.json",
+        "/data/koreader-anx-work/evidence/W31/full-02/summary.json",
+        "/data/koreader-anx-work/evidence/W31/full-02/identity.json",
+        "/data/koreader-anx-work/evidence/W31/measurement-wording-correction/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W32": {
+      "depends_on": [
+        "W30",
+        "W08",
+        "W15",
+        "W23"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "独立安装/配置副本12阶段：原数据seed、受控SIGKILL、外部禁用、移出插件、损坏主文件、初始化异常、未知schema/坏设置/残留标记、旧配置迁移、原管理器实时禁用与重启；逐次核对笔记/锚点/页码/收藏和已有统计行。不是所有native崩溃的复现。",
+      "source_snapshot": null,
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W32/faults-02/result.json",
+        "/data/koreader-anx-work/evidence/W32/faults-02/expected-data.json",
+        "/data/koreader-anx-work/evidence/W33/faults-current/result.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W33": {
+      "depends_on": [
+        "G4",
+        "W31",
+        "W32"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "当前完整本地前端99模块838/838例，Anx59/59；619 Lua零警告错误、尺寸/gettext通过，仅原shell两处失败；书库/文件动作、四尺寸视觉与焦点、12恢复阶段当前源码通过；正式性能full02通过。候选限定Linux本地，不包含实机和真实服务。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W33/checks/source-current-final.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W33/checks/source-files.json",
+        "/data/koreader-anx-work/evidence/W33/settings-02/result.json",
+        "/data/koreader-anx-work/evidence/W33/assistant-refresh-02/result.json",
+        "/data/koreader-anx-work/evidence/W33/checks/kodev-check-02.log",
+        "/data/koreader-anx-work/evidence/W33/checks/readerhighlight-ocr-04.xml",
+        "/data/koreader-anx-work/evidence/W33/checks/front-final.xml",
+        "/data/koreader-anx-work/evidence/W33/checks/front-offline.xml",
+        "/data/koreader-anx-work/evidence/W33/checks/source-current-comparison.json",
+        "/data/koreader-anx-work/artifacts/w33-local-snapshot-01/artifacts.json",
+        "/data/koreader-anx-work/evidence/W33/checks/summary.json",
+        "/data/koreader-anx-work/evidence/W33/checks/front-memory-01.xml",
+        "/data/koreader-anx-work/evidence/W33/checks/front-memory-01-summary.json",
+        "/data/koreader-anx-work/evidence/W33/checks/source-memory-01.json",
+        "/data/koreader-anx-work/evidence/W33/checks/summary-current.json",
+        "/data/koreader-anx-work/evidence/W33/checks/front-current.xml",
+        "/data/koreader-anx-work/evidence/W33/checks/source-current-final.json",
+        "/data/koreader-anx-work/evidence/W33/checks/kodev-check-current.log",
+        "/data/koreader-anx-work/evidence/W33/library-current/result.json",
+        "/data/koreader-anx-work/evidence/W33/file-actions-current/result.json",
+        "/data/koreader-anx-work/evidence/W33/faults-current/result.json",
+        "/data/koreader-anx-work/evidence/W33/visual-portrait/result.json",
+        "/data/koreader-anx-work/evidence/W33/visual-narrow/result.json",
+        "/data/koreader-anx-work/evidence/W33/visual-landscape/result.json",
+        "/data/koreader-anx-work/evidence/W33/visual-wide/result.json",
+        "/data/koreader-anx-work/artifacts/linux-candidate-01/artifacts.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W34": {
+      "depends_on": [
+        "W01"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "当前源码ARM64 release完整退出0；x86_64 Gradle成功并产出APK，但外层会话143原因未定单列。两个APK独立开发签名、zipalign/apksigner、appId/权限/ABI/版本和包内插件逐文件哈希全部通过；不等同Android运行或发布通过。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W34/packages/arm64-candidate-01/package.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W34/build/android-arm64.log",
+        "/data/koreader-anx-work/evidence/W34/build/android-arm64-pinned.log",
+        "/data/koreader-anx-work/evidence/W34/build/android-arm64-proxy.log",
+        "/data/koreader-anx-work/evidence/W34/build/x86-final-build-result.json",
+        "/data/koreader-anx-work/evidence/W34/packages/x86-candidate-01/package.json",
+        "/data/koreader-anx-work/evidence/W34/build/android-arm64-final-01.log",
+        "/data/koreader-anx-work/evidence/W34/packages/arm64-candidate-01/package.json",
+        "/data/koreader-anx-work/artifacts/android-candidate-01/artifacts.json",
+        "/data/koreader-anx-work/artifacts/android-candidate-02/artifacts.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W35": {
+      "depends_on": [
+        "W34",
+        "W33"
+      ],
+      "conditional": false,
+      "status": "verified",
+      "verified_scope": "Android11/API30/x86_64专用软件模拟器，两个阶段14项显式检查通过；启动、触摸键盘/搜索/开书/翻页、横竖屏、系统返回、备注编辑、前后台、书架返回、经典读回及禁用后file intent重启。页3、备注和原xpointer一致；21插件文件与当前源码一致，cleanup成功。非ARM64运行/实机/系统IME/真实服务结论。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W35/android-candidate-05/result.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W35/emulator/20261029T183249Z/launch.json",
+        "/data/koreader-anx-work/evidence/W35/emulator/20261029T183249Z/probe-20261029T183849848838Z.json",
+        "/data/koreader-anx-work/evidence/W35/android-candidate-01/result.json",
+        "/data/koreader-anx-work/evidence/W35/android-candidate-01/live/screen.png",
+        "/data/koreader-anx-work/evidence/W35/android-candidate-02/result.json",
+        "/data/koreader-anx-work/evidence/W35/android-candidate-03/result.json",
+        "/data/koreader-anx-work/evidence/W35/android-candidate-04/interruption.json",
+        "/data/koreader-anx-work/evidence/W35/android-candidate-05/result.json",
+        "/data/koreader-anx-work/evidence/W35/android-candidate-05/emulator-stop.json",
+        "/data/koreader-anx-work/evidence/W35/tools-static-audit/20261030T031346Z-response-protocol/preflight.json"
+      ],
+      "substeps": [],
+      "blocked_reason": null,
+      "next_action": null
+    },
+    "W36": {
+      "depends_on": [
+        "W34",
+        "W33"
+      ],
+      "conditional": false,
+      "status": "blocked",
+      "verified_scope": null,
+      "source_snapshot": null,
+      "evidence": [],
+      "substeps": [],
+      "blocked_reason": "adb尚无授权Android实机；用户尚未提供目标型号/系统。",
+      "next_action": "连接授权实机后核对包身份与数据路径，执行实机矩阵。"
+    },
+    "W37": {
+      "depends_on": [
+        "W30",
+        "W33"
+      ],
+      "conditional": false,
+      "status": "blocked",
+      "verified_scope": null,
+      "source_snapshot": null,
+      "evidence": [],
+      "substeps": [],
+      "blocked_reason": "尚无指定墨水屏实机/固件。",
+      "next_action": "取得目标设备后建立经典刷新与按键基线，再执行墨水屏矩阵。"
+    },
+    "W38": {
+      "depends_on": [
+        "W27"
+      ],
+      "conditional": false,
+      "status": "blocked",
+      "verified_scope": null,
+      "source_snapshot": null,
+      "evidence": [],
+      "substeps": [],
+      "blocked_reason": "测试用KOAssistant未配置模型服务；未取得指定服务及凭据位置。",
+      "next_action": "用户提供已配置测试服务后执行选段请求/取消/超时/断网/切书；不写凭据到证据。"
+    },
+    "W39": {
+      "depends_on": [
+        "W33"
+      ],
+      "conditional": false,
+      "status": "in_progress",
+      "verified_scope": "当前源码/双ABI包身份、Linux与Android软件模拟器证据、安装回退、许可来源和支持待测矩阵已归并。压缩包及最终文件校验单列final/summary.json；此批尚不表示G5-release发布验证完成。",
+      "source_snapshot": "/data/koreader-anx-work/artifacts/linux-candidate-02/manifest.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W39/package-audit-01/result.json",
+        "/data/koreader-anx-work/evidence/W39/package-audit-02/result.json",
+        "/data/koreader-anx-work/evidence/W39/final/summary.json",
+        "/data/koreader-anx-work/artifacts/linux-candidate-02/artifacts.json",
+        "/data/koreader-anx-work/artifacts/android-candidate-02/artifacts.json"
+      ],
+      "substeps": [],
+      "blocked_reason": "目标Android实机验收W36尚缺设备；墨水屏及真实AI服务同样待外部条件。",
+      "next_action": "本地与Android软件模拟器候选归并交付；授权Android/墨水屏实机及真实AI服务到位后继续对应矩阵，不能重复用模拟器替代实机。"
+    },
+    "W40": {
+      "status": "verified",
+      "depends_on": [
+        "W35"
+      ],
+      "user_request": "Anx书架的按钮可以更明显一点吗",
+      "scope": "插件内菜单入口及中文文案，原菜单排序扩展仅添加本插件ID；两处置顶并加粗。升级包提高版本名/版本码以刷新原launcher Lua缓存。",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W40-entry/summary.json",
+        "/data/koreader-anx-work/evidence/W40-entry/portrait-01/result.json",
+        "/data/koreader-anx-work/evidence/W40-entry/narrow-01/result.json",
+        "/data/koreader-anx-work/evidence/W34/packages/arm64-entry-01/package.json",
+        "/data/koreader-anx-work/artifacts/android-entry-01/artifacts.json"
+      ],
+      "next_action": "本次入口更新已完成。后续按需要在授权Android设备验证覆盖安装与实际触摸；外部平台/服务原待测项继续单列。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W40-entry/summary.json",
+      "verified_scope": "本次两处置顶中文加粗菜单增量：Anx 60/60、两尺寸真实SDL共8次点击、禁用回调、ARM64构建签名和资源/版本/证书核对通过。未重跑旧全量性能或Android运行。",
+      "artifacts": "/data/koreader-anx-work/artifacts/android-entry-01/artifacts.json"
+    }
+  },
+  "handoff": {
+    "last_verified_batch": "W40",
+    "last_valid_evidence": "/data/koreader-anx-work/evidence/W40-entry/summary.json",
+    "remaining_issues": [
+      "W36 Android实机",
+      "W37 墨水屏实机",
+      "W38 真实AI服务",
+      "W39/G5-release需对应外部验证完成后签收"
+    ],
+    "next_safe_action": "本次入口更新已完成并交付 android-entry-01；后续根据授权目标设备完成 W36/W37，真实 AI 服务配置就绪后进行 W38。不得将旧 W35 模拟器结果当作 anxui2 的运行验证。"
+  }
+}
