@@ -535,6 +535,41 @@ UIManager:scheduleIn(3.5, function() step(function()
         return
     end
     openFromMenu(function(fm)
+        if scenario == "ai_tools" then
+            selectBook(fm,function(reader)
+                dofile("/data/koreader/doc/anx-style-ui/tools/ai-tools-smoke.lua"){reader=reader,step=step,shot=shot,evidence=evidence,finish=finish}
+            end)
+            return
+        end
+        if scenario == "ai_book" then
+            selectBook(fm,function(reader)
+                dofile("/data/koreader/doc/anx-style-ui/tools/ai-book-smoke.lua"){
+                    reader=reader,step=step,shot=shot,evidence=evidence,finish=finish,editNote=editNote,
+                }
+            end)
+            return
+        end
+        if scenario == "ai_live" then
+            dofile("/data/koreader/doc/anx-style-ui/tools/ai-live-smoke.lua"){
+                fm=fm,step=step,shot=shot,evidence=evidence,finish=finish,
+            }
+            return
+        end
+        if scenario == "ai_context" then
+            selectBook(fm,function(reader)
+                dofile("/data/koreader/doc/anx-style-ui/tools/ai-context-smoke.lua"){
+                    reader=reader, step=step, shot=shot, finish=finish, evidence=evidence,
+                }
+            end)
+            return
+        end
+        if scenario == "ai_chat" or scenario == "ai_reopen" then
+            dofile("/data/koreader/doc/anx-style-ui/tools/ai-chat-smoke.lua"){
+                fm=fm, step=step, shot=shot, input=input, selectBook=selectBook,
+                finish=finish, evidence=evidence, book=book, scenario=scenario,
+            }
+            return
+        end
         if scenario == "shelf_import" or scenario == "shelf_reopen" then
             dofile("/data/koreader/doc/anx-style-ui/tools/shelf-smoke.lua"){
                 fm=fm, step=step, shot=shot, input=input, selectBook=selectBook,

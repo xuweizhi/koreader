@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--book", type=Path, required=True)
     parser.add_argument("--runtime", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
-    parser.add_argument("--scenario", choices=("baseline", "classic_home", "home", "components", "entry_points", "shelf_import", "library", "large_library", "replace", "resize", "startup", "startup_menu", "reader_tools", "note_index", "format", "advanced", "statistics", "settings_groups", "assistant", "plugins", "visual", "broken", "broken_classic", "file_actions", "roundtrip", "init_failure", "settings", "home_failure"), default="baseline")
+    parser.add_argument("--scenario", choices=("baseline", "classic_home", "home", "components", "entry_points", "shelf_import", "library", "large_library", "replace", "resize", "startup", "startup_menu", "ai_chat", "ai_book", "ai_tools", "ai_live", "ai_context", "reader_tools", "note_index", "format", "advanced", "statistics", "settings_groups", "assistant", "plugins", "visual", "broken", "broken_classic", "file_actions", "roundtrip", "init_failure", "settings", "home_failure"), default="baseline")
     parser.add_argument("--assistant-case", choices=("absent", "installed"), default="absent")
     parser.add_argument("--library-count", type=int, choices=(1000, 5000), default=5000)
     startup_cases = ("library", "classic", "last", "history", "favorites", "folder_shortcuts", "guide", "explicit_file", "explicit_dir", "recovery", "disabled", "missing_last", "native_library", "native_guide", "native_explicit_file", "native_explicit_dir", "native_recovery", "native_disabled")
@@ -216,6 +216,16 @@ def main():
     env["ANX_SMOKE_REPLACEMENT"] = str(replacement)
     env["ANX_SMOKE_ASSISTANT_CASE"] = args.assistant_case
     env["ANX_SMOKE_ARCHIVE"] = str(archive)
+    ai_service = None
+    if args.scenario in ("ai_chat", "ai_book", "ai_tools"):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("ai_fixture", Path(__file__).with_name("ai-fixture-server.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        ai_service = module.AIService()
+        env["ANX_SMOKE_AI_URL"] = ai_service.url
+    if args.scenario == "ai_live":
+        env["ANX_AI_KEY_FILE"] = "/data/koreader-anx-work/private/deepseek-key"
     started = time.monotonic()
     result = {"cwd": str(repo), "settings": settings, "scenario": args.scenario,
               "backend": "real SDL3 under Xvfb", "width": args.width, "height": args.height,
@@ -231,6 +241,8 @@ def main():
     source_paths += [Path(__file__).with_name("visual-smoke.lua")]
     source_paths += [Path(__file__).with_name("entry-smoke.lua"), Path(__file__).with_name("shelf-smoke.lua")]
     source_paths += [Path(__file__).with_name("startup-menu-smoke.lua")]
+    source_paths += [Path(__file__).with_name("ai-chat-smoke.lua"), Path(__file__).with_name("ai-fixture-server.py")]
+    source_paths += [Path(__file__).with_name("ai-context-smoke.lua"), Path(__file__).with_name("ai-live-smoke.lua"), Path(__file__).with_name("ai-experience-smoke.lua"), Path(__file__).with_name("ai-book-smoke.lua"), Path(__file__).with_name("ai-tools-smoke.lua")]
     result["source_files"] = {
         str(path.relative_to(repo)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in source_paths
@@ -248,7 +260,7 @@ def main():
     result["runs"] = []
     if replacement.exists():
         result["replacement_sha256"] = hashlib.sha256(replacement.read_bytes()).hexdigest()
-    restart_phases = {"shelf_import": "shelf_reopen", "roundtrip": "reopen", "format": "reopen", "settings": "settings_reopen", "home_failure": "recovery_resume"}
+    restart_phases = {"ai_chat": "ai_reopen", "shelf_import": "shelf_reopen", "roundtrip": "reopen", "format": "reopen", "settings": "settings_reopen", "home_failure": "recovery_resume"}
     phases = [args.scenario, restart_phases[args.scenario]] if args.scenario in restart_phases else [args.scenario]
     if args.scenario == "plugins":
         phases = ["plugins", "plugins_disabled", "plugins_enabled"]
@@ -339,7 +351,17 @@ def main():
                                "startup": json.loads(metrics_file.read_text()) if metrics_file.exists() else None})
         if not passed:
             break
+    if args.scenario == "ai_live":
+        private_config = args.runtime / "settings/anxui-ai/config.json"
+        if private_config.exists():
+            private_config.unlink()
     result["elapsed_seconds"] = time.monotonic() - started
+    if ai_service:
+        ai_service.close()
+        fixture = {"verification": "local deterministic HTTP/SSE fixture, not a live model",
+                   "requests": ai_service.requests, "cancelled": ai_service.cancelled}
+        (args.evidence / "ai-fixture-results.json").write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n")
+        result["ai_fixture"] = {"requests": len(ai_service.requests), "cancelled": ai_service.cancelled}
     result["passed"] = len(result["runs"]) == len(phases) and all(run["passed"] for run in result["runs"])
     result["screenshots"] = [str(p) for p in sorted(args.evidence.rglob("*.png"))]
     (args.evidence / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")

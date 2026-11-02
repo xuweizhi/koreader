@@ -4,6 +4,10 @@
 
 本文件是 AI 执行本项目的入口。产品目标见[实施方案](implementation-plan.zh-CN.md)，批次契约见[任务表](tasks.zh-CN.md)，判定标准见[验收矩阵](acceptance.zh-CN.md)，实际进度见[执行状态](execution-state.json)。用户已要求开始实施，按下列流程持续推进。
 
+2026-10-30 后续范围更新：用户要求落地 Anx AI 功能，W43 在原插件中增加[内置 AI 一期](ai-update.zh-CN.md)。下文 W26/W27 的“优先原 KOAssistant 窗口”属于历史首版范围；当前默认使用内置聊天与 OpenAI 兼容客户端，旧桥接作为可选项保留。真实服务和设备验证仍分别记录，不能以本地协议测试代替。
+
+2026-11-02 后续阶段：按用户“继续后续阶段”的要求完成 W44–W46，范围和当前安装入口见[内置 AI 后续阶段](ai-phases.zh-CN.md)。真实服务仅签收内置客户端的 DeepSeek 实测范围；原 KOAssistant、其他服务与物理设备分别保留状态。
+
 ## 1. 固定决策与执行边界
 
 - 默认在 KOReader 中新增 `plugins/anxui.koplugin`，使用 Lua 组件实现 Anx 风格；保留阅读引擎、ReaderUI、UIManager、原数据写入方及高级菜单。

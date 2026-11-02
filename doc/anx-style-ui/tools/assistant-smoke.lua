@@ -3,12 +3,12 @@ return function(context)
     local UIManager = require("ui/uimanager")
     local plugin = fm.anxui
     local installed = os.getenv("ANX_SMOKE_ASSISTANT_CASE") == "installed"
-    plugin:showAssistant()
-    local status = plugin.assistant_view.snapshot
+    plugin:showOptionalAssistant()
+    local status = plugin.optional_assistant_view.snapshot
     shot(installed and "assistant-unconfigured" or "assistant-absent")
     if not installed then
         assert(status.state == "unavailable")
-        plugin.assistant_view.on_select(plugin.assistant_view.entries[1])
+        plugin.optional_assistant_view.on_select(plugin.optional_assistant_view.entries[1])
         assert(not fm.koassistant)
         context.finish(); return
     end
@@ -24,14 +24,14 @@ return function(context)
             if widget ~= ui and widget ~= ui.anxui.home then UIManager:close(widget) end
         end
     end
-    plugin.assistant_view.on_select(plugin.assistant_view.entries[1])
+    plugin.optional_assistant_view.on_select(plugin.optional_assistant_view.entries[1])
     step(function()
         assert(fm.koassistant.current_input_dialog, "original general composer did not open")
         shot("original-general-composer")
         closePopups(fm)
         assert(not fm.koassistant.current_input_dialog)
-        plugin:showAssistant()
-        plugin.assistant_view.on_select(plugin.assistant_view.entries[3])
+        plugin:showOptionalAssistant()
+        plugin.optional_assistant_view.on_select(plugin.optional_assistant_view.entries[3])
         assert(fm.menu.menu_container, "original assistant settings missing")
         shot("original-assistant-settings")
         closePopups(fm)
@@ -39,11 +39,11 @@ return function(context)
         local path = fm.koassistant.path .. "/_meta.lua"
         local file = assert(io.open(path, "rb")); local bytes = file:read("*a"); file:close()
         file = assert(io.open(path, "ab")); file:write("\n-- isolated version mismatch\n"); file:close()
-        plugin:showAssistant()
-        assert(plugin.assistant_view.snapshot.state == "version_mismatch")
+        plugin:showOptionalAssistant()
+        assert(plugin.optional_assistant_view.snapshot.state == "version_mismatch")
         shot("assistant-version-mismatch")
         assert(not plugin:assistantSession():open("general"))
-        plugin.assistant_view:onClose()
+        plugin.optional_assistant_view:onClose()
         file = assert(io.open(path, "wb")); file:write(bytes); file:close()
         assert(plugin:assistantSession():status().state == "available")
         -- Exercise original manager toggle; this instance can remain cached.
@@ -62,9 +62,9 @@ return function(context)
         context.selectBook(fm, function(reader)
             local owner = reader.anxui
             owner:showReaderPanel()
-            owner.reader_panel.buttons.assistant.callback()
-            assert(owner.assistant_view.snapshot.book)
-            owner.assistant_view.on_select(owner.assistant_view.entries[2])
+            owner:showOptionalAssistant()
+            assert(owner.optional_assistant_view.snapshot.book)
+            owner.optional_assistant_view.on_select(owner.optional_assistant_view.entries[2])
             step(function()
                 assert(reader.koassistant.current_input_dialog, "original book composer missing")
                 assert(reader.koassistant.configuration.features.book_metadata.file == context.book)

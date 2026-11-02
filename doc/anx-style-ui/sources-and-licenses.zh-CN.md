@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | KOReader | `https://github.com/koreader/koreader`，`dcb50ae439f2acd82aec213063e76739984eacb1`；根目录 `COPYING` 为 AGPL v3 文本 | 插件在原 Lua widget/原模块之上实现；核心跟踪文件无产品改动 |
 | 新增 Anx UI 插件、测试与文档 | 本仓库新增目录/文件，成果清单逐文件记录 SHA-256 | 沿用 KOReader 项目的 AGPL v3 许可；可审查完整 Lua 源码 |
+| 内置 AI | `plugins/anxui.koplugin/ai/` 与 `views/chat.lua`；复用 KOReader 的 LuaSocket/LuaSec、JSON、SQLite、Markdown/HTML、子进程及 widget 接口 | 独立实现兼容流式请求、聊天、文字索引和受限只读工具；未复制 Anx Dart/Flutter 运行时或 KOAssistant 请求模块。无第三方模型、服务密钥或 AI SDK 随包安装；DeepSeek 使用用户自配服务 |
 | Anx Reader | `/data/anx-reader`，`0c7fc1ad4551f7dbbeba6a6468f69d830957fa2a` | 仅作界面与功能参考；本插件没有打包 Flutter 代码、Anx 图像或应用品牌资源 |
 | 图标与字体 | KOReader 自带 `resources/icons/`、`resources/fonts/`，固定子模块版本见成果清单 | 通过原 IconWidget/Font 使用现有资源，插件包没有额外复制位图或字体 |
 | KOAssistant | `https://github.com/zeeyado/koassistant.koplugin`，`b89a60daf52bc9c3b33419607f48bbecde302461`；该版本 `LICENSE` 为 GPL v3 文本 | 可选适配目标，138 个运行时 Lua 文件 SHA-256 锁定；不随 Anx 插件包分发 |

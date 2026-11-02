@@ -3,10 +3,10 @@
   "plan_revision": 2,
   "record_kind": "implementation_progress",
   "implementation_started": true,
-  "updated_at": "2026-10-30T09:14:00.343294+00:00",
-  "current_batch": "W42",
+  "updated_at": "2026-11-02T03:51:49.310299+00:00",
+  "current_batch": "W46",
   "next_batch": "W36",
-  "next_action": "W42初始界面选项增量已完成。后续可在授权Android设备验证覆盖安装、选择首页及重启；原实机和服务待测项继续单列。",
+  "next_action": "W44–W46 已按列明范围验证并交付 anxui6 APK。W36/W37 等待物理设备；W38 其余真实故障矩阵及其他服务独立待测。",
   "planning_reference": {
     "koreader": {
       "path": "/data/koreader",
@@ -23,7 +23,7 @@
     "development_platform": "linux_sdl",
     "primary_target": "android_color",
     "eink_device": null,
-    "ai_integration": "optional_pinned_koassistant_existing_ui",
+    "ai_integration": "builtin_openai_compatible_chat_with_optional_pinned_koassistant",
     "language": [
       "zh_CN",
       "en"
@@ -36,7 +36,7 @@
     "anxui_config": "/data/koreader-anx-work/runtime/anxui",
     "note": "工作目录、测试书籍和隔离配置根目录已建立；每次实际运行创建独立配置/书籍副本。"
   },
-  "source_snapshot": "/data/koreader-anx-work/evidence/W33/checks/source-current-final.json",
+  "source_snapshot": "/data/koreader-anx-work/evidence/W46-ai-tools/summary.json",
   "runtime_commands": {
     "linux_launch": "env PARALLEL_JOBS=1 KO_HOME=<isolated> ./kodev run -b -W 540 -H 720 -D 160 <copied-book-or-directory>",
     "focused_frontend_test": "env PARALLEL_JOBS=1 ./kodev test -b -j 1 -o <junit.xml> front pluginloader readerui readerannotation readerbookmark anxui_home",
@@ -59,7 +59,7 @@
         "W35"
       ],
       "required_evidence": "明确系统镜像与实际交互记录",
-      "probe": "W35 android-candidate-05 passed both phases on Android11/API30/x86_64 software emulator; dedicated AVD stop acknowledged after validation. Historical ANR/tool failures retained."
+      "probe": "W46 anxui6 APK AI upgrade/UI/restart verified on dedicated Android11/API30/x86_64 TCG emulator. Summary: /data/koreader-anx-work/evidence/W46-ai-tools/summary.json. Emulator stop acknowledged after verification."
     },
     {
       "id": "android_test_device",
@@ -91,12 +91,12 @@
     },
     {
       "id": "ai_service",
-      "status": "waiting_for_configuration",
+      "status": "available",
       "affects": [
         "W38"
       ],
       "required_evidence": "已配置可用服务及真实请求/失败结果；禁止保存密钥",
-      "probe": "Pinned KOAssistant test configuration has no provider credentials; original local composer and selection passed. User asked asynchronously to specify test service or defer; no credentials copied."
+      "probe": "用户授权的 DeepSeek 凭据仅用于隔离调试；内置 Lua 客户端已完成真实成功/401/取消/工具调用。凭据不写入代码、证据或包。"
     }
   ],
   "gates": {
@@ -214,7 +214,7 @@
       ],
       "blocked_reason": null,
       "verified_scope": "W33 基线完整本地前端99模块838/838例，Anx59/59；619 Lua零警告错误、尺寸/gettext通过，仅原shell两处失败；书库/文件动作、四尺寸视觉与焦点、12恢复阶段W33 源码通过；正式性能full02通过。候选限定Linux本地，不包含实机和真实服务。",
-      "current_source_status": "W42 targeted startup checks verified; full G5-local evidence remains scoped to W33/linux-candidate-02. Current plugin hashes and ARM64 package are recorded in W42 summary."
+      "current_source_status": "W43 AI targeted increment verified; historical full regression/performance gates remain scoped to their earlier source snapshots."
     },
     "G5-release": {
       "requires": [
@@ -967,7 +967,21 @@
       ],
       "substeps": [],
       "blocked_reason": null,
-      "next_action": null
+      "next_action": null,
+      "supplemental_verification": [
+        {
+          "batch": "W46",
+          "abi": [
+            "arm64",
+            "x86_64"
+          ],
+          "version": "anxui6",
+          "package_records": [
+            "/data/koreader-anx-work/evidence/W34/packages/arm64-ai-experience-01/package.json",
+            "/data/koreader-anx-work/evidence/W34/packages/x86-ai-experience-02/package.json"
+          ]
+        }
+      ]
     },
     "W35": {
       "depends_on": [
@@ -992,7 +1006,14 @@
       ],
       "substeps": [],
       "blocked_reason": null,
-      "next_action": null
+      "next_action": null,
+      "supplemental_verification": [
+        {
+          "batch": "W46",
+          "scope": "AI upgrade persistence and Chinese input/clipboard/Markdown/background/stop/rotation/back/restart; not a full old platform matrix rerun",
+          "evidence": "/data/koreader-anx-work/evidence/W46-ai-tools/summary.json"
+        }
+      ]
     },
     "W36": {
       "depends_on": [
@@ -1027,13 +1048,21 @@
         "W27"
       ],
       "conditional": false,
-      "status": "blocked",
-      "verified_scope": null,
-      "source_snapshot": null,
-      "evidence": [],
+      "status": "partially_verified",
+      "verified_scope": "真实 DeepSeek 模型列表、原生 Lua HTTPS、中文流式回答、HTTP401、取消及 list_indexed_books 工具调用；不评价输出质量，不外推其他服务/平台。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W46-ai-tools/summary.json",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W44-ai-experience/live01/result.json",
+        "/data/koreader-anx-work/evidence/W46-ai-tools/live02/result.json"
+      ],
       "substeps": [],
-      "blocked_reason": "测试用KOAssistant未配置模型服务；未取得指定服务及凭据位置。",
-      "next_action": "用户提供已配置测试服务后执行选段请求/取消/超时/断网/切书；不写凭据到证据。"
+      "next_action": "指定其他服务或验证可选 KOAssistant 时单列新增证据。",
+      "scope": "内置客户端 DeepSeek 范围；历史 KOAssistant 外部调用未测。",
+      "remaining_scope": [
+        "真实服务断网/超时/切书完整故障矩阵",
+        "可选KOAssistant真实服务",
+        "其他服务协议与模型"
+      ]
     },
     "W39": {
       "depends_on": [
@@ -1115,17 +1144,91 @@
       "artifacts": "/data/koreader-anx-work/artifacts/android-startup-01/artifacts.json",
       "source_artifacts": "/data/koreader-anx-work/artifacts/startup-update-01/artifacts.json",
       "verified_scope": "Anx 73/73单元、8个Lua零警告错误；两种尺寸真实原生菜单单选/重启往返6个进程，18种新旧启动分支；ARM64构建签名及版本、源码、证书、权限核对通过。未复测Android运行或旧完整矩阵。"
+    },
+    "W43": {
+      "status": "verified",
+      "depends_on": [
+        "W42"
+      ],
+      "scope": "实现内置AI一期：OpenAI兼容配置、流式聊天/停止/重试/历史、选文解释翻译和有界当前章节上下文；真实本地协议验证并打包APK。",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W43-ai/summary.json",
+        "/data/koreader-anx-work/evidence/W43-ai/chat-final02/result.json",
+        "/data/koreader-anx-work/evidence/W43-ai/narrow-final02/result.json",
+        "/data/koreader-anx-work/evidence/W43-ai/context-epub-final01/result.json",
+        "/data/koreader-anx-work/evidence/W43-ai/context-pdf-final01/result.json",
+        "/data/koreader-anx-work/evidence/W43-ai/visual-landscape01/result.json",
+        "/data/koreader-anx-work/evidence/W43-ai/optional-01/result.json",
+        "/data/koreader-anx-work/evidence/W34/packages/arm64-ai-02/package.json",
+        "/data/koreader-anx-work/artifacts/android-ai-01/artifacts.json"
+      ],
+      "user_request": "anx-reader的AI功能能移植到本项目吗；帮我落地",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W43-ai/summary.json",
+      "artifacts": "/data/koreader-anx-work/artifacts/android-ai-01/artifacts.json",
+      "source_artifacts": "/data/koreader-anx-work/artifacts/ai-update-01/artifacts.json",
+      "verified_scope": "内置AI一期：87个Anx及49个原阅读器用例、33个Lua静态检查；两尺寸真实SDL聊天/重启和本地HTTP/SSE流式、停止、重试、断流、429、超时、立即关闭；EPUB/PDF首末文本、横屏UI和可选KOAssistant回归；ARM64签名/版本/源码/证书/权限核对。不代表真实模型或Android运行通过。",
+      "next_action": "W43内置AI一期已交付。可在应用内填入用户选择的服务配置后验证真实模型；Android运行、W36/W37/W38及G5-release继续单列待测。"
+    },
+    "W44": {
+      "status": "verified",
+      "depends_on": [
+        "W43"
+      ],
+      "scope": "第二阶段：DeepSeek真实联调、模型配置切换和连接测试、Markdown/复制/编辑重发/历史；随后推进阅读上下文和扩展工具。",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W44-ai-experience/live01/result.json",
+        "/data/koreader-anx-work/evidence/W44-ai-experience/chat01/result.json",
+        "/data/koreader-anx-work/evidence/W44-ai-experience/unit01.log",
+        "/data/koreader-anx-work/evidence/W46-ai-tools/summary.json"
+      ],
+      "verified_scope": "多配置/连接测试、Markdown/复制/编辑重发/历史检索；真实DeepSeek及Android迁移/触屏/剪贴板/旋转/重启验证。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W46-ai-tools/summary.json",
+      "artifacts": "/data/koreader-anx-work/artifacts/android-ai-02/artifacts.json",
+      "source_artifacts": "/data/koreader-anx-work/artifacts/ai-update-02/artifacts.json"
+    },
+    "W45": {
+      "status": "verified",
+      "depends_on": [
+        "W44"
+      ],
+      "scope": "按书籍筛选对话、章节/笔记/全文检索上下文、可回到原文的来源列表。",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W45-book-ai/book01/result.json",
+        "/data/koreader-anx-work/evidence/W46-ai-tools/summary.json"
+      ],
+      "verified_scope": "按书筛选、指定章节/原笔记/书内搜索、原文来源跳转；最终横屏SDL及原阅读器回归。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W46-ai-tools/summary.json",
+      "artifacts": "/data/koreader-anx-work/artifacts/android-ai-02/artifacts.json",
+      "source_artifacts": "/data/koreader-anx-work/artifacts/ai-update-02/artifacts.json"
+    },
+    "W46": {
+      "status": "verified",
+      "depends_on": [
+        "W45"
+      ],
+      "scope": "跨书本地索引、阅读报告/思维导图/双栏翻译；有限轮次的只读阅读工具调用。",
+      "evidence": [
+        "/data/koreader-anx-work/evidence/W46-ai-tools/unit-final.log",
+        "/data/koreader-anx-work/evidence/W46-ai-tools/tools05/result.json",
+        "/data/koreader-anx-work/evidence/W46-ai-tools/live02/result.json",
+        "/data/koreader-anx-work/evidence/W46-ai-tools/book-final/result.json",
+        "/data/koreader-anx-work/evidence/W46-ai-tools/summary.json"
+      ],
+      "verified_scope": "跨书文字索引与取消/过期、两本EPUB原文跳转、报告/树状导图/双栏分页、最多3轮只读工具；真实DeepSeek工具调用、小屏大字及APK验包。",
+      "source_snapshot": "/data/koreader-anx-work/evidence/W46-ai-tools/summary.json",
+      "artifacts": "/data/koreader-anx-work/artifacts/android-ai-02/artifacts.json",
+      "source_artifacts": "/data/koreader-anx-work/artifacts/ai-update-02/artifacts.json"
     }
   },
   "handoff": {
-    "last_verified_batch": "W42",
-    "last_valid_evidence": "/data/koreader-anx-work/evidence/W42-startup/summary.json",
+    "last_verified_batch": "W46",
+    "last_valid_evidence": "/data/koreader-anx-work/evidence/W46-ai-tools/summary.json",
     "remaining_issues": [
       "W36 Android实机",
       "W37 墨水屏实机",
-      "W38 真实AI服务",
-      "W39/G5-release需对应外部验证完成后签收"
+      "W38部分真实故障场景/其他服务/可选KOAssistant仍未测",
+      "本轮不重签旧全量性能/格式矩阵或G5-release"
     ],
-    "next_safe_action": "W42初始界面选项增量已完成。后续可在授权Android设备验证覆盖安装、选择首页及重启；原实机和服务待测项继续单列。"
+    "next_safe_action": "W44–W46 已按列明范围验证并交付 anxui6 APK。W36/W37 等待物理设备；W38 其余真实故障矩阵及其他服务独立待测。"
   }
 }

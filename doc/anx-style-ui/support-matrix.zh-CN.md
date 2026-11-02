@@ -4,11 +4,13 @@
 
 W33 / `linux-candidate-02` 基线已完成正式性能、完整本地回归、四尺寸视觉和故障恢复验证，符合当时 G5-local 的本地候选范围。W34 的 ARM64 / x86_64 开发签名包及身份检查已完成，W35 的 Android 11 / API 30 x86_64 软件模拟器流程已通过；这些完整回归和模拟器记录对应 `android-candidate-02` 中的插件版本。
 
-W40 在该基线上增强返回书架入口，见[入口更新记录](entry-update.zh-CN.md)。W41 增加更接近 Anx Reader 的书架布局、持久书架、多选导入和递归目录扫描，当前源码的增量验证单列于[书架更新记录](bookshelf-update.zh-CN.md)。旧全量性能、故障和 Android 模拟器结果保留为基线，不冒充本次更新的复测结果。W36 Android 实机、W37 墨水屏实机、W38 真实 AI 服务待外部条件。**G5-release 尚未签收**。
+W40 在该基线上增强返回书架入口，见[入口更新记录](entry-update.zh-CN.md)。W41 增加更接近 Anx Reader 的书架布局、持久书架、多选导入和递归目录扫描，当前源码的增量验证单列于[书架更新记录](bookshelf-update.zh-CN.md)。旧全量性能、故障和 Android 模拟器结果保留为基线，不冒充本次更新的复测结果。W36 Android 实机、W37 墨水屏实机待外部条件。W38 的内置客户端 DeepSeek 实测已补充，其他服务与旧可选桥接仍未测。**G5-release 尚未签收**。
 
 唯一批次记录见 [execution-state.json](execution-state.json)。各 `result.json` 保存核心与子模块、测试命令、退出码、样本摘要以及未提交文件快照；后续改动不会使旧记录自动代表最新版本。最终包须与完成的回归源码身份一致。
 
 W42 将 Anx 书架加入原生“初始界面”单选菜单，与原 Anx 外观开关共用 `start_with` 设置。当前启动流程和开发 APK 的增量验证见[启动选项更新](startup-update.zh-CN.md)；W41 的书架/扫描及更早的完整回归仍按其源码摘要保留。
+
+W43 增加内置 AI 一期，见[功能、安装与验证记录](ai-update.zh-CN.md)。本轮验证实际 Lua 界面、子进程网络传输、可复现的本地 HTTP/SSE 服务和原阅读引擎；不把测试服务的固定回答当作真实模型实测。
 
 ## 功能范围
 
@@ -59,7 +61,11 @@ W29 核对全部 37 项：33 项在当前 Linux SDL 构建中可加载，完成�
 | 有意未执行的动作 | timesync 只验证动作可见，没有修改系统时间；terminal 只打开菜单，没有执行终端命令；httpinspector 入口可达不等于远程服务通信通过 |
 | 其他首页接管插件 | SimpleUI、Bookshelf 等未测试；不能宣称与 Anx 同时接管首页兼容 |
 
-## 可选 AI
+## 内置 AI 与可选 KOAssistant
+
+内置 AI 支持 OpenAI 兼容 Chat Completions 流式接口、自定义地址/模型/密钥、连续对话、停止、重试、历史、选文解释/翻译/总结及有界章节提取。W44–W46 提供多模型配置、Markdown、消息操作、书籍上下文、跨书文字索引、阅读报告、树状思维导图、双栏翻译与受限只读工具，详见[更新说明](ai-phases.zh-CN.md)。仍不提供原生 Claude/Gemini 协议、向量检索或完整 Anx Agent 运行时。
+
+W43 的 HTTP/SSE 协议测试涵盖分片中文、连续追问、HTTP 429、断流、停止、强制经过超时阈值、关闭书籍回收、重启历史；当前 EPUB/PDF 样本提取及取消另列。W44–W46 另有真实 DeepSeek HTTPS、成功/401/取消/工具调用和 Android 模拟器迁移/交互记录；模型输出质量、Android 真机和其他服务不由这些记录替代。下述 KOAssistant 记录仅指原可选桥接。
 
 仅审计 KOAssistant `b89a60daf52bc9c3b33419607f48bbecde302461`（`0.25.0-dev`）；未配置密钥，不自动下载、安装或发送内容。已通过的本地范围包括缺失/禁用/版本不符、原通用/书籍/选段输入框、原文文本和选区锚点、原设置入口，以及输入框取消与 owner 失效。W33 还补测了原 `onScreenResize` 替换输入框后返回书库、实时禁用时清理替代框，见 [assistant-refresh-02/result.json](/data/koreader-anx-work/evidence/W33/assistant-refresh-02/result.json)。
 
@@ -76,7 +82,7 @@ W29 核对全部 37 项：33 项在当前 Linux SDL 构建中可加载，完成�
 | Android 模拟器 / W35 | `android-candidate-05` 两阶段通过：启动、内置键盘触摸、搜索、横竖屏、触摸开书、系统返回、翻页、原备注编辑、前后台、书架返回、经典读回、禁用重启及文件 intent；9 张真实截图 | Android 11 / API 30 / x86_64，480×800 / 800×480、160 DPI、CPU TCG + SwiftShader；不覆盖 ARM64 运行、系统 IME、中文输入、所有 URI 或实机性能。见 [Android 记录](android-validation.zh-CN.md) |
 | Android 实机 / W36 | 外部待测，未签收 | 授权目标设备、系统版本、最终包及完整设备回归；当前记录未发现已连接设备 |
 | 墨水屏实机 / W37 | 外部待测，未签收 | 指定设备/固件、灰度或彩墨模式、残影/局刷、触摸/硬件键、灯光、睡眠/唤醒、性能和续航适用项 |
-| 真实 AI 服务 / W38 | 外部待测，未签收 | 用户配置的服务、模型和真实成功/失败/取消记录；证据不得保存密钥 |
+| 真实 AI 服务 / W38 | 内置客户端 DeepSeek 范围已实测 | 原生 Lua HTTPS、中文流式回答、401、立即取消、只读工具调用；未评估回答质量，其他服务与可选 KOAssistant 仍未测 |
 
 ## 已知失败、限制与证据时效
 

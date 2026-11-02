@@ -34,6 +34,19 @@ function AnxUI:init()
         return
     end
     self.ui.menu:registerToMainMenu(self)
+    if self.ui.highlight then
+        local highlight = self.ui.highlight
+        highlight:addToHighlightDialog("anxui_ai", function(this)
+            return {text=self.translate("Anx AI"), callback=self.scope:guard(function()
+                this:highlightFromHoldPos()
+                local selection = this.selected_text
+                if not selection or type(selection.text) ~= "string" or selection.text == "" then return end
+                local context = self:module("ai/context").selection(self.ui, selection.text, self:module("ai/protocol"),selection.pos0)
+                this:onClose(); self:showAssistant(context)
+            end)}
+        end)
+        self.scope:defer(function() highlight:removeFromHighlightDialog("anxui_ai") end)
+    end
 end
 
 function AnxUI:module(name)
@@ -75,6 +88,11 @@ function AnxUI:addToMainMenu(menu_items)
         text = self.translate("AI assistant"), sorting_hint = "more_tools",
         enabled_func = function() return not self.stopped end,
         callback = function() self:showAssistant() end,
+    }
+    menu_items.anxui_koassistant = {
+        text = self.translate("KOAssistant (optional)"), sorting_hint = "more_tools",
+        enabled_func = function() return not self.stopped end,
+        callback = function() self:showOptionalAssistant() end,
     }
     menu_items.anxui_settings = {
         text = self.translate("Anx settings"), sorting_hint = "more_tools",
@@ -119,11 +137,60 @@ function AnxUI:assistantSession()
     return self.assistant
 end
 
-function AnxUI:showAssistant()
-    if self.stopped or self.assistant_view then return end
+function AnxUI:showAssistant(context)
+    if self.stopped then return end
+    if self.assistant_view then
+        if context then self.assistant_view:cancelContext(); self.assistant_view.session:fresh(context) end
+        return
+    end
+    local store, err = self:module("ai/store").new()
+    if not store then return self:readerResult(false, err) end
+    local scope = self:module("lifecycle").new()
+    self.assistant_view = self:module("views/chat"):new{
+        scope=scope, new_scope=self:module("lifecycle").new, store=store, context=context,
+        theme=self:module("theme").shelf(self.settings:options()),
+        new_theme=function() return self:module("theme").shelf(self.settings:options()) end,
+        widgets=self:module("widgets"), translate=self.translate,
+        protocol=self:module("ai/protocol"), transport=self:module("ai/transport"),
+        session_class=self:module("ai/session"), context_module=self:module("ai/context"),
+        markdown=self:module("ai/markdown"), settings_ui=self:module("ai/settings"),
+        bookindex=self:module("ai/bookindex"), readingtools=self:module("ai/readingtools"),
+        worker=self:module("ai/worker"), on_source=function(ref) self:openAISource(ref) end,
+        reader_ui=self.ui.document and self.ui or nil,
+        on_closed=function() self.assistant_view=nil end,
+    }
+    UIManager:show(self.scope:own(self.assistant_view))
+end
+
+function AnxUI:openAISource(ref)
+    if self.stopped or not ref or type(ref.file)~="string" or not ref.signature
+        or self:module("ai/context").signature(ref.file)~=ref.signature then
+        return self:readerResult(false,"The source book has changed. Attach its text again.")
+    end
+    local function locate(ui)
+        local plugin=ui.anxui
+        if not plugin or plugin.stopped then return end
+        plugin.scope:later(0,function()
+            if ref.note then plugin:readerResult(plugin:readerSession():gotoStoredNote(ref.note))
+            elseif ref.xpointer and ui.document.getPageFromXPointer then
+                local ok,page=pcall(ui.document.getPageFromXPointer,ui.document,ref.xpointer)
+                if ok and page and page>0 then ui:handleEvent(require("ui/event"):new("GotoXPointer",ref.xpointer)) end
+            elseif type(ref.page)=="number" and ref.page>=1 and ref.page<=ui.document:getPageCount() then
+                ui:handleEvent(require("ui/event"):new("GotoPage",ref.page))
+            end
+        end)
+    end
+    if self.assistant_view then self.assistant_view:onClose() end
+    if self.ui.document and self.ui.document.file==ref.file then locate(self.ui)
+    elseif self.ui.document then self.ui:switchDocument(ref.file,nil,locate)
+    else self:openBook(ref.file,locate) end
+end
+
+function AnxUI:showOptionalAssistant()
+    if self.stopped or self.optional_assistant_view then return end
     local bridge = self:assistantSession()
     local status = bridge:status()
-    local options = self:readerViewOptions("assistant_view")
+    local options = self:readerViewOptions("optional_assistant_view")
     options.title, options.no_search, options.row_height = "AI assistant", true, 100
     options.status_text = self.translate(status.reason)
     options.entries = {
@@ -134,19 +201,19 @@ function AnxUI:showAssistant()
     options.on_select = function(entry)
         local current = bridge:status()
         if current.state ~= "available" then return self:readerResult(false, current.reason) end
-        UIManager:close(self.assistant_view)
+        UIManager:close(self.optional_assistant_view)
         if entry.id == "settings" then self:showNativeSetting("koassistant", "koassistant")
         else self:readerResult(bridge:open(entry.id)) end
     end
     options.actions = {
         {id = "refresh", text = "Refresh", callback = function()
-            UIManager:close(self.assistant_view); self:showAssistant()
+            UIManager:close(self.optional_assistant_view); self:showOptionalAssistant()
         end},
-        {id = "close", text = "Close", callback = function() UIManager:close(self.assistant_view) end},
+        {id = "close", text = "Close", callback = function() UIManager:close(self.optional_assistant_view) end},
     }
     options.snapshot = status
-    self.assistant_view = self:module("views/readerlist"):new(options)
-    UIManager:show(self.scope:own(self.assistant_view))
+    self.optional_assistant_view = self:module("views/readerlist"):new(options)
+    UIManager:show(self.scope:own(self.optional_assistant_view))
 end
 
 function AnxUI:showStatistics()
@@ -535,7 +602,7 @@ function AnxUI:showSettings(group)
         {id = "device", text = "Device", subtitle = "Screen, input and network"},
         {id = "sync", text = "Sync", subtitle = "Reading progress and book files"},
         {id = "plugins", text = "Plugins", subtitle = "Native plugin manager and advanced settings"},
-        {id = "assistant", text = "AI assistant", subtitle = "Optional KOAssistant"},
+        {id = "assistant", text = "AI assistant", subtitle = "Chat, model and conversation history"},
     }
     local entries = {
         reading = {
