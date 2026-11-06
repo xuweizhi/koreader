@@ -25,6 +25,27 @@ function Session:save()
     return true
 end
 
+-- Changing the attachment affects future requests only. Existing replies own
+-- their source snapshots, and the conversation keeps its original identity.
+function Session:setContext(context)
+    if self.running then return false, "busy" end
+    if context ~= nil and (type(context) ~= "table" or type(context.text) ~= "string"
+        or #context.text > 16001 or type(context.title) ~= "string"
+        or (context.sources ~= nil and (type(context.sources) ~= "table" or #context.sources > 30))) then
+        return false, "context_error"
+    end
+    local copy = context and require("util").tableDeepCopy(context) or nil
+    if not self.data then self:fresh(copy); return true end
+    local previous, updated = self.data.context, self.data.updated
+    self.data.context = copy
+    if not self:save() then
+        self.data.context, self.data.updated = previous, updated
+        return false, "storage_error"
+    end
+    self.changed()
+    return true
+end
+
 function Session:load(data)
     self:stop()
     self.data = require("util").tableDeepCopy(data)
@@ -39,7 +60,7 @@ end
 
 -- Tool results share the same bounded, visible reference context as manually
 -- attached passages. Only trusted local tools can create navigation anchors.
-function Session:toolResult(result, err)
+function Session:toolResult(result, err, answer)
     if not result then return require("json").encode({error=err or "context_error"}) end
     if not result.context then return require("json").encode(result.data or {}) end
     local incoming=result.context
@@ -65,6 +86,10 @@ function Session:toolResult(result, err)
     end
     context.truncated=context.truncated or incoming.truncated or #text<#incoming.text
     self.data.context=context
+    if answer then
+        answer.sources=require("util").tableDeepCopy(context.sources)
+        if answer.mode=="parallel" then answer.source_text=context.text end
+    end
     return require("json").encode({text=text,sources=labels,truncated=context.truncated})
 end
 
@@ -105,6 +130,7 @@ function Session:send(text, options)
     end
     messages[#messages + 1] = {role="user", content=text}
     local answer = {role="assistant", content="", status="streaming",mode=options and options.mode,
+        sources=require("util").tableDeepCopy(context and context.sources or {}),
         source_text=options and options.mode=="parallel" and context and context.text or nil}
     self.data.messages[#self.data.messages + 1] = {role="user", content=text}
     self.data.messages[#self.data.messages + 1] = answer
@@ -153,7 +179,7 @@ function Session:send(text, options)
                     local done=scope:guard(function(result,reason)
                         if completed then return end
                         completed=true;step.status=reason and "error" or "complete"
-                        messages[#messages+1]={role="tool",tool_call_id=call.id,content=self:toolResult(result,reason)}
+                        messages[#messages+1]={role="tool",tool_call_id=call.id,content=self:toolResult(result,reason,answer)}
                         self:save();run(index+1)
                     end)
                     local ok=pcall(self.tools.execute,self.tools,call,scope,done)

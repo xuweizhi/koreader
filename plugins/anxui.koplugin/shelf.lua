@@ -41,6 +41,43 @@ function Shelf.roots()
     return result
 end
 
+function Shelf.rootInfo()
+    local name = Shelf.collection(false)
+    local times = name and Collection.coll_settings[name].anxui_scan_times or {}
+    local result = {}
+    for _, path in ipairs(Shelf.roots()) do
+        result[#result + 1] = {path=path, available=lfs.attributes(path, "mode") == "directory",
+            last_scan=type(times[path]) == "number" and times[path] or nil}
+    end
+    return result
+end
+
+-- Only forget this directory as a future scan source. Membership, ebook files
+-- and native reading data are deliberately not touched.
+function Shelf.removeRoot(path)
+    local name = Shelf.collection(false)
+    if not name then return false end
+    local settings = Collection.coll_settings[name]
+    local old_roots, old_times = settings.anxui_scan_roots, settings.anxui_scan_times
+    local roots, times, found = {}, {}, false
+    for _, root in ipairs(Shelf.roots()) do
+        if root == path then found = true else roots[#roots + 1] = root end
+    end
+    if not found then return false end
+    for root, stamp in pairs(old_times or {}) do if root ~= path then times[root] = stamp end end
+    settings.anxui_scan_roots, settings.anxui_scan_times = roots, times
+    local ok = pcall(function()
+        Collection:write({[name]=true})
+        local saved = LuaSettings:open(DataStorage:getSettingsDir() .. "/collection.lua"):readSetting(name)
+        local saved_roots = assert(saved and saved.settings and saved.settings.anxui_scan_roots)
+        assert(#saved_roots == #roots)
+        for index, root in ipairs(roots) do assert(saved_roots[index] == root) end
+        assert(not (saved.settings.anxui_scan_times or {})[path])
+    end)
+    if not ok then settings.anxui_scan_roots, settings.anxui_scan_times = old_roots, old_times end
+    return ok
+end
+
 -- Scan and validate in bounded batches. Until commit, candidates belong only
 -- to this job; cancel/owner close discards them without altering collections.
 function Shelf.start(scope, options)
@@ -97,7 +134,7 @@ function Shelf.start(scope, options)
         local name = Shelf.collection(true)
         local coll, settings = Collection.coll[name], Collection.coll_settings[name]
         local order, added = Collection:getCollectionNextOrder(name), {}
-        local old_roots = settings.anxui_scan_roots
+        local old_roots, old_times = settings.anxui_scan_roots, settings.anxui_scan_times
         for _, item in ipairs(job.pending) do
             if not coll[item.file] then
                 item.order = order
@@ -111,6 +148,10 @@ function Shelf.start(scope, options)
         for root in pairs(job.roots) do if not known[root] then roots[#roots + 1] = root end end
         table.sort(roots)
         settings.anxui_scan_roots = roots
+        local times = {}
+        for root, stamp in pairs(old_times or {}) do times[root] = stamp end
+        for root in pairs(job.roots) do times[root] = os.time() end
+        settings.anxui_scan_times = times
         local ok = pcall(function()
             Collection:write({[name]=true})
             -- Native flush logs I/O failures instead of propagating a result.
@@ -124,10 +165,14 @@ function Shelf.start(scope, options)
             local saved_roots = saved.settings.anxui_scan_roots or {}
             assert(#saved_roots == #roots, "scan roots write failed")
             for index, root in ipairs(roots) do assert(saved_roots[index] == root, "scan roots write incomplete") end
+            for root in pairs(job.roots) do
+                assert(saved.settings.anxui_scan_times and saved.settings.anxui_scan_times[root] == times[root], "scan time write failed")
+            end
         end)
         if not ok then
             for _, file in ipairs(added) do coll[file] = nil end
             settings.anxui_scan_roots = old_roots
+            settings.anxui_scan_times = old_times
             if not previous_name then Collection:removeCollection(name) end
             return done("The library could not be saved. Check free space and folder permissions.")
         end

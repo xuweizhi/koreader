@@ -127,6 +127,22 @@ function Store:renameSession(id, title)
     return false
 end
 
+local function validSources(sources)
+    if sources == nil then return true end -- Legacy replies have no snapshot.
+    if type(sources) ~= "table" or #sources > 30 then return false end
+    local ids = {}
+    for key, ref in pairs(sources) do
+        if type(key) ~= "number" or key < 1 or key > #sources or key % 1 ~= 0
+            or type(ref) ~= "table" or type(ref.id) ~= "string" or not ref.id:match("^S%d+$") or ids[ref.id]
+            or type(ref.file) ~= "string" or type(ref.title) ~= "string" or type(ref.label) ~= "string"
+            or (ref.xpointer ~= nil and type(ref.xpointer) ~= "string")
+            or (ref.page ~= nil and type(ref.page) ~= "number")
+            or (ref.signature ~= nil and type(ref.signature) ~= "string") then return false end
+        ids[ref.id] = true
+    end
+    return true
+end
+
 function Store:history()
     local data, err = self:read("history", {schema=1, sessions={}})
     if not data or type(data.sessions) ~= "table" then return nil, err or "storage_error" end
@@ -139,16 +155,7 @@ function Store:history()
             local context = session.context
             if (context.chapter ~= nil and type(context.chapter) ~= "string")
                 or (context.page ~= nil and type(context.page) ~= "number") then return nil, "storage_error" end
-            if context.sources~=nil then
-                if type(context.sources)~="table" or #context.sources>30 then return nil,"storage_error" end
-                for _,ref in ipairs(context.sources) do
-                    if type(ref)~="table" or type(ref.id)~="string" or not ref.id:match("^S%d+$")
-                        or type(ref.file)~="string" or type(ref.title)~="string" or type(ref.label)~="string"
-                        or (ref.xpointer~=nil and type(ref.xpointer)~="string")
-                        or (ref.page~=nil and type(ref.page)~="number")
-                        or (ref.signature~=nil and type(ref.signature)~="string") then return nil,"storage_error" end
-                end
-            end
+            if not validSources(context.sources) then return nil,"storage_error" end
         end
         if session.book~=nil and (type(session.book)~="table" or type(session.book.file)~="string"
             or type(session.book.title)~="string") then return nil,"storage_error" end
@@ -158,6 +165,7 @@ function Store:history()
                 or (message.error ~= nil and type(message.error) ~= "string")
                 or (message.http_code ~= nil and type(message.http_code) ~= "number")
                 or (message.mode~=nil and message.mode~="parallel" and message.mode~="mindmap" and message.mode~="report")
+                or not validSources(message.sources)
                 or (message.source_text~=nil and (type(message.source_text)~="string" or #message.source_text>16001)) then return nil, "storage_error" end
         end
     end

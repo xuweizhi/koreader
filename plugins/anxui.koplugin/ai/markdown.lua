@@ -1,5 +1,6 @@
 -- Render model Markdown using KOReader's bundled parser. Keep only structural
 -- tags: no images, external resources, styles, or actionable links from a model.
+-- Navigation links are created separately, from trusted local source snapshots.
 local Markdown = {}
 local allowed = {p=true,br=true,strong=true,b=true,em=true,i=true,pre=true,code=true,
     h1=true,h2=true,h3=true,h4=true,h5=true,h6=true,ul=true,ol=true,li=true,
@@ -10,14 +11,24 @@ function Markdown.html(text)
         local value=table.concat(lines,"\n");lines={}
         if value=="" then return end
         if code then output[#output+1]="<pre><code>"..require("util").htmlEscape(value).."</code></pre>";return end
+        -- The bundled parser treats bare [S1] as a shortcut link and drops
+        -- its brackets. Protect literal citation labels through parsing,
+        -- including inline code, then restore them after stripping tags.
+        local prefix, citations = "ANXLOCALCITATION", {}
+        while value:find(prefix,1,true) do prefix=prefix.."X" end
+        value=value:gsub("%[(S%d+)%]",function(id)
+            citations[#citations+1]="["..id.."]"
+            return prefix..#citations.."END"
+        end)
         local ok,html=pcall(function() return require("apps/filemanager/lib/md")(value) end)
         if not ok or type(html)~="string" then html="<p>"..require("util").htmlEscape(value).."</p>" end
-        output[#output+1]=html:gsub("<([^>]+)>",function(raw)
+        html=html:gsub("<([^>]+)>",function(raw)
             local closing,name=raw:match("^%s*(/?)%s*([%a%d]+)")
             name=name and name:lower()
             if allowed[name] then return "<"..closing..name..">" end
             return ""
         end)
+        output[#output+1]=html:gsub(prefix.."(%d+)END",function(index) return citations[tonumber(index)] or "" end)
     end
     for line in (text.."\n"):gmatch("(.-)\n") do
         local marker=line:match("^%s*(```+)") or line:match("^%s*(~~~+)")
@@ -28,9 +39,47 @@ function Markdown.html(text)
     flush(fence~=nil)
     return table.concat(output,"\n")
 end
-function Markdown.preview(text, width, font_size)
+function Markdown.sourceForLink(link, sources)
+    local id = type(link) == "table" and type(link.uri) == "string" and link.uri:match("^anx%-source:(S%d+)$")
+    if not id then return end
+    for _, ref in ipairs(sources or {}) do
+        if ref.id == id then return ref end
+    end
+end
+
+function Markdown.citations(html, sources)
+    local ids = {}
+    for _, ref in ipairs(sources or {}) do
+        if type(ref.id) == "string" and ref.id:match("^S%d+$") then ids[ref.id] = true end
+    end
+    if not next(ids) then return html end
+    local code_depth = 0
+    -- Only text nodes outside code/pre are eligible. The input has already
+    -- been sanitized, or was produced by the local structured renderer.
+    return (html .. "<anx-end>"):gsub("(.-)(<[^>]*>)", function(text, tag)
+        if code_depth == 0 then
+            text = text:gsub("%[(S%d+)%]", function(id)
+                if ids[id] then return '<a href="anx-source:' .. id .. '">[' .. id .. ']</a>' end
+                return "[" .. id .. "]"
+            end)
+        end
+        local closing, name = tag:match("^<(/?)([%w]+)")
+        if name == "pre" or name == "code" then
+            code_depth = math.max(0, code_depth + (closing == "/" and -1 or 1))
+        end
+        return text .. (tag == "<anx-end>" and "" or tag)
+    end)
+end
+
+function Markdown.preview(text, width, font_size, sources, on_source)
     local widget = require("ui/widget/htmlboxwidget"):new{dimen=require("ui/geometry"):new{w=width,h=2048}}
-    local ok=pcall(widget.setContent,widget,Markdown.html(text), [[@page{margin:0}body{margin:0;line-height:1.3}
+    if on_source then
+        widget.html_link_tapped_callback = function(link)
+            local ref = Markdown.sourceForLink(link, sources)
+            if ref then on_source(ref) end
+        end
+    end
+    local ok=pcall(widget.setContent,widget,Markdown.citations(Markdown.html(text), sources), [[@page{margin:0}body{margin:0;line-height:1.3}
         p{margin:0 0 .5em}h1,h2,h3{margin:.3em 0;font-size:1.15em}
         pre{white-space:pre-wrap;background:#f3f3f3}code{font-family:monospace}
         blockquote{margin:.4em;padding-left:.5em;border-left:2px solid #999}
@@ -66,7 +115,7 @@ function Markdown.document(entry, translate)
                 ..(original[index] or "")..'</td><td style="width:50%;vertical-align:top;border:1px solid #999;padding:.4em">'
                 ..(translation[index] or "")..'</td></tr>'
         end
-        rows[#rows+1]='</table>';return table.concat(rows)
+        rows[#rows+1]='</table>';return Markdown.citations(table.concat(rows), entry.sources)
     end
     if entry.mode=="mindmap" then
         local output,depth,count={},0,0
@@ -84,9 +133,9 @@ function Markdown.document(entry, translate)
         end
         if count>0 then
             while depth>0 do output[#output+1]='</li></ul>';depth=depth-1 end
-            return table.concat(output)
+            return Markdown.citations(table.concat(output), entry.sources)
         end
     end
-    return Markdown.html(entry.content)
+    return Markdown.citations(Markdown.html(entry.content), entry.sources)
 end
 return Markdown

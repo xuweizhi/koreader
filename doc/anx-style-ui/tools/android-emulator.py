@@ -9,7 +9,7 @@ import signal
 import secrets
 import socket
 import subprocess
-from android_common import owned_avd, owned_process, process_start_ticks, OWNER, IMAGE
+from android_common import owned_avd, owned_process, process_start_ticks, OWNER, IMAGE, AVD_ROOT, EMULATOR_EVIDENCE, LAB
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('action', choices=('start', 'probe', 'stop'))
@@ -17,7 +17,7 @@ args = parser.parse_args()
 repo = Path(__file__).resolve().parents[3]
 work = Path('/data/koreader-anx-work')
 sdk = repo / 'base/toolchain/android-sdk-linux'
-avd_root = work / 'android-avd'
+avd_root = AVD_ROOT
 avd_root.mkdir(parents=True, exist_ok=True)
 avd = avd_root / 'anxui-api30.avd'
 state = avd_root / 'emulator.json'
@@ -44,7 +44,7 @@ if args.action == 'start':
         with socket.socket() as check:
             check.bind(('127.0.0.1', port))
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    evidence = work / 'evidence/W35/emulator' / stamp
+    evidence = EMULATOR_EVIDENCE / stamp
     evidence.mkdir(parents=True, exist_ok=False)
     image = sdk / 'system-images/android-30/default/x86_64/system.img'
     if not image.exists():
@@ -65,14 +65,15 @@ if args.action == 'start':
         OWNER.write_text(json.dumps({'schema': 1, 'avd': str(avd), 'image': str(IMAGE),
                                      'token': secrets.token_hex(24), 'created_at': stamp}, indent=2) + '\n')
     owner = owned_avd()
+    cores = '1' if LAB == 'w50' else '2'
     command = [sdk / 'emulator/emulator', '-avd', 'anxui-api30', '-port', '5584',
                '-accel', 'off', '-gpu', 'swiftshader', '-no-window', '-no-audio', '-no-boot-anim',
-               '-no-snapshot', '-no-metrics', '-memory', '1536', '-cores', '2',
+               '-no-snapshot', '-no-metrics', '-memory', '1536', '-cores', cores,
                '-camera-back', 'none', '-camera-front', 'none']
     with (evidence / 'emulator.log').open('w') as log:
         process = subprocess.Popen(list(map(str, command)), env=environment,
                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-    record = {'pid': process.pid, 'serial': serial, 'evidence': str(evidence),
+    record = {'pid': process.pid, 'serial': serial, 'evidence': str(evidence), 'lab': LAB,
               'avd': str(avd), 'owner_token': owner['token'], 'start_ticks': process_start_ticks(process.pid),
               'command': list(map(str, command)), 'started_at': stamp,
               'mode': 'Android API30 x86_64, TCG CPU + SwiftShader GPU, no KVM',
@@ -86,6 +87,12 @@ elif args.action == 'probe':
     queries = [(name, ['shell', 'getprop', name]) for name in
                ('sys.boot_completed', 'ro.build.version.release', 'ro.build.version.sdk', 'ro.product.cpu.abi')]
     queries.append(('avd_name', ['emu', 'avd', 'name']))
+    if LAB == 'w50':
+        # boot_completed survives a system_server crash. Require live framework
+        # services before handing this recovery device to an install/UI test.
+        queries.extend((('system_server_pid', ['shell', 'pidof', 'system_server']),
+                        ('network_stack_pid', ['shell', 'pidof', 'com.android.networkstack.process']),
+                        ('window_size', ['shell', 'wm', 'size'])))
     for name, arguments in queries:
         props[name] = ''
         try:
@@ -110,6 +117,9 @@ elif args.action == 'probe':
     complete = (not errors and props['sys.boot_completed'] == '1'
                 and props['ro.build.version.sdk'] == '30' and props['ro.product.cpu.abi'] == 'x86_64'
                 and props['avd_name'] == 'anxui-api30')
+    if LAB == 'w50':
+        complete = (complete and bool(props['system_server_pid']) and bool(props['network_stack_pid'])
+                    and 'Physical size:' in props['window_size'])
     data['state'] = 'boot_complete' if complete else 'boot_pending'
     checked = datetime.datetime.now(datetime.timezone.utc)
     data['checked_at'] = checked.isoformat()

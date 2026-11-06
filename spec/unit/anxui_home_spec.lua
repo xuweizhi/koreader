@@ -359,12 +359,17 @@ describe("Anx UI manual home", function()
         plugin:showHome()
         local home = plugin.home
         assert.are.equal("library", home.source)
+        local function option(label)
+            for _, item in ipairs(home.options_menu.item_table) do
+                if item.text == plugin.translate(label) then return item end
+            end
+            error("missing option: " .. label)
+        end
         home:showOptions()
-        home.options_menu.item_table[3].callback()
+        option("Last read").callback()
         assert.are.equal("recent", home.sort)
         home:showOptions()
-        assert.are.equal(plugin.translate("Descending order"), home.options_menu.item_table[6].text)
-        home.options_menu.item_table[6].callback()
+        option("Descending order").callback()
         assert.is_true(home.reverse)
         home:showSources()
         home.options_menu.item_table[1].callback()
@@ -375,6 +380,36 @@ describe("Anx UI manual home", function()
         local __, scan_reason = home.on_scan()
         assert.are.equal("stale_session", scan_reason)
         assert.is_nil(plugin.home)
+    end)
+
+    it("executes only visible batch confirmations owned by the current home", function()
+        plugin:showHome()
+        local applied = 0
+        plugin.finishBatchBookAction = function() applied = applied + 1 end
+        local function confirm(index)
+            plugin:showBatchBookActions({sample})
+            plugin.batch_actions_menu.item_table[index].callback()
+            return assert(plugin.batch_confirmation)
+        end
+        local dismissed = confirm(2)
+        local stale = dismissed.ok_callback
+        UIManager:close(dismissed)
+        assert.is_nil(plugin.batch_confirmation)
+        stale()
+        assert.are.equal(0, applied)
+
+        local visible = confirm(2)
+        visible.ok_callback()
+        assert.are.equal(1, applied)
+        UIManager:close(visible)
+
+        local closing = confirm(3)
+        local orphaned = closing.ok_callback
+        plugin:closeHome()
+        assert.is_nil(plugin.batch_confirmation)
+        local _, reason = orphaned()
+        assert.are.equal("stale_session", reason)
+        assert.are.equal(1, applied)
     end)
 
     it("isolates picker selection and cancels picker and confirmation callbacks on close", function()

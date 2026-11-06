@@ -101,6 +101,136 @@ describe("Anx built-in AI", function()
         return Session.new(store,Protocol,transport,Lifecycle.new),captured
     end
 
+    local function attachment(name)
+        return {kind="selection",file=name..".epub",title=name,page=3,text="Excerpt "..name,
+            sources={{id="S1",file=name..".epub",title=name,label="Selection",page=3,
+                xpointer="/body/"..name,signature="123:456",note={datetime="saved-"..name}}}}
+    end
+
+    it("changes or removes attachments without losing conversation identity or messages", function()
+        local chat,captured=session();chat:fresh(attachment("First"));chat:send("Explain")
+        captured.callbacks.delta("Saved reply");captured.callbacks.done()
+        local id,title,book,messages=chat.data.id,chat.data.title,chat.data.book,chat.data.messages
+        chat.data.draft="Unsent draft"
+        local changed=0;chat.changed=function() changed=changed+1 end
+        local next_context=attachment("Second")
+        assert.is_true(chat:setContext(next_context))
+        next_context.sources[1].title="Changed elsewhere"
+        assert.are.equal("Second",chat.data.context.sources[1].title)
+        assert.is_true(chat:setContext(nil))
+        assert.are.equal(id,chat.data.id);assert.are.equal(title,chat.data.title)
+        assert.are.equal(book,chat.data.book);assert.are.equal(messages,chat.data.messages)
+        assert.are.equal("Unsent draft",chat.data.draft);assert.are.equal(2,changed)
+        local saved=assert(Store.new(path)):history()[1]
+        assert.is_nil(saved.context);assert.are.equal("First.epub",saved.book.file)
+        assert.are.equal("Saved reply",saved.messages[2].content)
+        assert.is_true(chat:send("Next"))
+        assert.are.equal(4,#captured.messages) -- system, previous turn, new question
+        for _,message in ipairs(captured.messages) do
+            assert.is_nil(message.content:find("<book_excerpt>",1,true))
+        end
+        chat:close()
+    end)
+
+    it("rejects attachment changes while sending and restores attachments on storage failure", function()
+        local chat,captured=session();chat:fresh(attachment("First"));chat:send("Explain")
+        local context=chat.data.context
+        local ok,err=chat:setContext(nil)
+        assert.is_false(ok);assert.are.equal("busy",err);assert.are.equal(context,chat.data.context)
+        captured.callbacks.done()
+        local original_save=store.saveSession
+        store.saveSession=function() return false end
+        ok,err=chat:setContext(attachment("Second"))
+        store.saveSession=original_save
+        assert.is_false(ok);assert.are.equal("storage_error",err)
+        assert.are.equal(context,chat.data.context)
+        assert.are.equal("First",store:history()[1].context.title)
+        assert.is_false(chat:setContext({title="Invalid",text=string.rep("x",16002)}))
+        assert.are.equal(context,chat.data.context)
+        chat:close()
+    end)
+
+    it("freezes each reply's sources and parallel original across attachment changes and reload", function()
+        local chat,captured=session();local first=attachment("First");chat:fresh(first)
+        chat:send("Translate",{mode="parallel"})
+        local answer=chat.data.messages[2]
+        first.sources[1].note.datetime="mutated";first.sources[1].file="different.epub";first.text="Changed text"
+        assert.are.equal("First.epub",answer.sources[1].file)
+        assert.are.equal("saved-First",answer.sources[1].note.datetime)
+        assert.are.equal("Excerpt First",answer.source_text)
+        captured.callbacks.delta("Translation");captured.callbacks.done()
+        assert.is_true(chat:setContext(attachment("Second")))
+        assert.is_true(chat:send("Report",{mode="report"}))
+        captured.callbacks.delta("Report [S1]");captured.callbacks.done()
+        assert.are.equal("First.epub",answer.sources[1].file)
+        assert.are.equal("Second.epub",chat.data.messages[4].sources[1].file)
+        local reloaded=assert(Store.new(path)):history()[1]
+        chat:load(reloaded)
+        assert.are.equal("Excerpt First",chat.data.messages[2].source_text)
+        assert.are.equal("First.epub",chat.data.messages[2].sources[1].file)
+        assert.are.equal("Second.epub",chat.data.messages[4].sources[1].file)
+        chat:close()
+    end)
+
+    it("retries and edits using the current attachment while preserving earlier reply snapshots", function()
+        local chat,captured=session();chat:fresh(attachment("First"));chat:send("First question")
+        captured.callbacks.delta("First answer");captured.callbacks.done()
+        chat:setContext(attachment("Second"));chat:send("Translate",{mode="parallel"})
+        captured.callbacks.delta("Second answer");captured.callbacks.done()
+        chat:load(assert(Store.new(path)):history()[1])
+        assert.is_true(chat:setContext(nil));assert.is_true(chat:retry())
+        assert.are.same({},chat.data.messages[4].sources);assert.is_nil(chat.data.messages[4].source_text)
+        for _,message in ipairs(captured.messages) do
+            assert.is_nil(message.content:find("Excerpt ",1,true))
+            assert.is_nil(message.content:find("Available sources",1,true))
+        end
+        captured.callbacks.delta("Without reference");captured.callbacks.done()
+        assert.is_true(chat:setContext(attachment("Third")))
+        assert.is_true(chat:editLast("Edited question"))
+        assert.are.equal("Third.epub",chat.data.messages[4].sources[1].file)
+        assert.are.equal("Excerpt Third",chat.data.messages[4].source_text)
+        assert.are.equal("First.epub",chat.data.messages[2].sources[1].file)
+        assert.is_truthy(captured.messages[2].content:find("Excerpt Third",1,true))
+        assert.is_nil(captured.messages[2].content:find("Third.epub",1,true))
+        chat:close()
+    end)
+
+    it("keeps legacy replies without sources distinct from newly attached material", function()
+        local chat,captured=session()
+        chat:load({id="legacy",title="Old",messages={{role="user",content="Old question"},
+            {role="assistant",content="Old answer [S1]",status="complete"}}})
+        assert.is_true(chat:setContext(attachment("New")))
+        assert.is_nil(chat.data.messages[2].sources)
+        chat:send("New question");captured.callbacks.done()
+        local saved=assert(Store.new(path)):history()[1]
+        assert.is_nil(saved.messages[2].sources)
+        assert.are.equal("New.epub",saved.messages[4].sources[1].file)
+        chat:close()
+    end)
+
+    it("validates saved reply sources and bounded originals while accepting legacy history", function()
+        local data={schema=1,sessions={{id="check",title="Check",messages={{role="assistant",content="Reply"}}}}}
+        local answer=data.sessions[1].messages[1]
+        local function valid()
+            assert.is_true(store:write("history",data))
+            return store:history()~=nil
+        end
+        assert.is_true(valid())
+        answer.sources=attachment("Valid").sources;answer.source_text=string.rep("x",16001)
+        assert.is_true(valid())
+        answer.source_text=string.rep("x",16002);assert.is_false(valid());answer.source_text=nil
+        answer.sources[1].page={};assert.is_false(valid())
+        answer.sources=attachment("Valid").sources;answer.sources[1].id="https://example.test"
+        assert.is_false(valid())
+        answer.sources=attachment("Valid").sources;answer.sources[2]=attachment("Other").sources[1]
+        assert.is_false(valid()) -- duplicate local IDs cannot identify a unique source
+        answer.sources={}
+        for index=1,31 do
+            answer.sources[index]=attachment("Book"..index).sources[1];answer.sources[index].id="S"..index
+        end
+        assert.is_false(valid())
+    end)
+
     it("keeps cancellation, retry, persistence and late responses tied to the correct session", function()
         local chat,captured=session();chat:fresh({kind="selection",title="Book",page=1,text="Reference"})
         assert.is_true(chat:send("Explain"));captured.callbacks.delta("Partial")
@@ -242,6 +372,31 @@ describe("Anx built-in AI", function()
         chat:stop();done({data={late=true}})
         assert.are.equal("cancelled",chat.data.messages[2].status)
         assert.is_nil(chat.data.context)
+    end)
+
+    it("adds remapped tool sources only to the active reply and its bounded parallel original", function()
+        local chat,captured=session();chat:fresh(attachment("First"));chat:send("Explain")
+        captured.callbacks.done()
+        chat:setContext(attachment("Second"));chat.data.tools_enabled=true
+        local done
+        chat.tools={definitions={{type="function"}},execute=function(self,call,scope,callback) done=callback end}
+        chat:send("Translate with evidence",{mode="parallel"})
+        local call={id="call-1",["function"]={name="search_index",arguments="{}"}}
+        captured.callbacks.done(nil,nil,nil,{call})
+        local incoming=attachment("Third");incoming.text="[S1] "..string.rep("中",7000)
+        done({context=incoming})
+        local answer=chat.data.messages[4]
+        assert.are.equal(2,#answer.sources);assert.are.equal("S2",answer.sources[2].id)
+        assert.are.equal("Third.epub",answer.sources[2].file)
+        assert.is_truthy(answer.source_text:find("[S2]",1,true));assert.is_true(#answer.source_text<=16001)
+        assert.are.equal(1,#chat.data.messages[2].sources)
+        assert.are.equal("First.epub",chat.data.messages[2].sources[1].file)
+        incoming.sources[1].file="changed.epub"
+        chat.data.context.sources[2].title="Changed current source"
+        assert.are.equal("Third",answer.sources[2].title);assert.are.equal("Third.epub",answer.sources[2].file)
+        captured.callbacks.delta("Translation");captured.callbacks.done()
+        assert.are.equal("Third.epub",assert(Store.new(path)):history()[1].messages[4].sources[2].file)
+        chat:close()
     end)
 
     it("indexes and searches two books without changing them and skips stale sources", function()

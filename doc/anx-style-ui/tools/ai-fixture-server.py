@@ -23,6 +23,9 @@ class AIService:
                 assert self.path.endswith("/v1/chat/completions")
                 assert body["model"] in ("fixture-model", "fixture-model-2") and body["stream"] is True
                 prompt = body["messages"][-1]["content"]
+                if "__without_reference__" in prompt:
+                    assert not any("<book_excerpt>" in message.get("content", "") for message in body["messages"]), \
+                        "removed reference text was still sent"
                 owner.requests.append({"messages": body["messages"], "model": body["model"]})
                 if "__fail__" in prompt:
                     payload = b'{"error":{"message":"fixture private error"}}'

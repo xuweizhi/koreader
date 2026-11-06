@@ -140,7 +140,10 @@ end
 function AnxUI:showAssistant(context)
     if self.stopped then return end
     if self.assistant_view then
-        if context then self.assistant_view:cancelContext(); self.assistant_view.session:fresh(context) end
+        if context then
+            local ok, reason = self.assistant_view:setContext(context)
+            if not ok and reason == "busy" then self.assistant_view:message(reason) end
+        end
         return
     end
     local store, err = self:module("ai/store").new()
@@ -151,6 +154,7 @@ function AnxUI:showAssistant(context)
         theme=self:module("theme").shelf(self.settings:options()),
         new_theme=function() return self:module("theme").shelf(self.settings:options()) end,
         widgets=self:module("widgets"), translate=self.translate,
+        dialogs=self:module("dialogs"),
         protocol=self:module("ai/protocol"), transport=self:module("ai/transport"),
         session_class=self:module("ai/session"), context_module=self:module("ai/context"),
         markdown=self:module("ai/markdown"), settings_ui=self:module("ai/settings"),
@@ -163,24 +167,51 @@ function AnxUI:showAssistant(context)
 end
 
 function AnxUI:openAISource(ref)
-    if self.stopped or not ref or type(ref.file)~="string" or not ref.signature
+    if self.stopped then return end
+    if type(ref)~="table" or type(ref.file)~="string" or type(ref.signature)~="string"
         or self:module("ai/context").signature(ref.file)~=ref.signature then
         return self:readerResult(false,"The source book has changed. Attach its text again.")
+    end
+    local unavailable = "This source location is no longer available. Attach its text again."
+    if not (type(ref.note)=="table" or (type(ref.xpointer)=="string" and ref.xpointer~="")
+        or (type(ref.page)=="number" and ref.page>=1 and ref.page%1==0)) then
+        return self:readerResult(false,unavailable)
     end
     local function locate(ui)
         local plugin=ui.anxui
         if not plugin or plugin.stopped then return end
         plugin.scope:later(0,function()
-            if ref.note then plugin:readerResult(plugin:readerSession():gotoStoredNote(ref.note))
-            elseif ref.xpointer and ui.document.getPageFromXPointer then
-                local ok,page=pcall(ui.document.getPageFromXPointer,ui.document,ref.xpointer)
-                if ok and page and page>0 then ui:handleEvent(require("ui/event"):new("GotoXPointer",ref.xpointer)) end
-            elseif type(ref.page)=="number" and ref.page>=1 and ref.page<=ui.document:getPageCount() then
-                ui:handleEvent(require("ui/event"):new("GotoPage",ref.page))
+            if not ui.document or ui.document.file~=ref.file
+                or plugin:module("ai/context").signature(ref.file)~=ref.signature then
+                return plugin:readerResult(false,"The source book has changed. Attach its text again.")
             end
+            local ok, moved, reason = pcall(function()
+                local session = plugin:readerSession()
+                if not session then return false, unavailable end
+                if type(ref.note)=="table" then return session:gotoStoredNote(ref.note) end
+                local Event = require("ui/event")
+                if type(ref.xpointer)=="string" and ref.xpointer~="" then
+                    if not ui.document.getPageFromXPointer then return false, unavailable end
+                    if ui.document.isXPointerInDocument and not ui.document:isXPointerInDocument(ref.xpointer) then
+                        return false, unavailable
+                    end
+                    local page = ui.document:getPageFromXPointer(ref.xpointer)
+                    if type(page)~="number" or page<1 or page>ui.document:getPageCount() then return false, unavailable end
+                    ui.link:addCurrentLocationToStack()
+                    ui:handleEvent(Event:new("GotoXPointer",ref.xpointer))
+                elseif type(ref.page)=="number" and ref.page>=1 and ref.page%1==0 and ref.page<=ui.document:getPageCount() then
+                    ui.link:addCurrentLocationToStack()
+                    ui:handleEvent(Event:new("GotoPage",ref.page))
+                else return false, unavailable end
+                return true
+            end)
+            if not ok then plugin:readerResult(false,unavailable)
+            else plugin:readerResult(moved,reason) end
         end)
     end
-    if self.assistant_view then self.assistant_view:onClose() end
+    -- This is navigation, not a Back-key request: close the whole chat even if
+    -- its keyboard is open. onCloseWidget preserves its draft and history.
+    if self.assistant_view then UIManager:close(self.assistant_view) end
     if self.ui.document and self.ui.document.file==ref.file then locate(self.ui)
     elseif self.ui.document then self.ui:switchDocument(ref.file,nil,locate)
     else self:openBook(ref.file,locate) end
@@ -284,9 +315,10 @@ end
 function AnxUI:readerViewOptions(key)
     return {
         scope = self:module("lifecycle").new(), new_scope = self:module("lifecycle").new,
-        theme = self:module("theme").new(self.settings:options()),
-        new_theme = function() return self:module("theme").new(self.settings:options()) end,
+        theme = self:module("theme").shelf(self.settings:options()),
+        new_theme = function() return self:module("theme").shelf(self.settings:options()) end,
         widgets = self:module("widgets"), translate = self.translate,
+        dialogs = self:module("dialogs"),
         on_closed = function() self[key] = nil end,
     }
 end
@@ -296,25 +328,31 @@ function AnxUI:showReaderPanel()
     if not reader or self.reader_panel then return end
     self:closeReaderViews()
     local options = self:readerViewOptions("reader_panel")
+    options.theme = self:module("theme").shelf(self.settings:options())
+    options.new_theme = function() return self:module("theme").shelf(self.settings:options()) end
     options.snapshot = reader:snapshot()
     options.actions = {
         {id = "toc", text = "Contents", callback = function() self:showReaderList("toc") end},
         {id = "progress", text = "Progress", callback = function() self:readerAction("progress") end},
         {id = "notes", text = "Notes", callback = function() self:showReaderList("notes") end},
     }
-    for _, entry in ipairs({{"layout", "Reading settings"}, {"search", "Search text"}, {"bookmark", "Toggle bookmark"},
-            {"back", "Previous location"}, {"advanced", "Advanced"}}) do
+    for _, entry in ipairs({{"layout", "Reading settings"}, {"bookmark", "Toggle bookmark"}}) do
         options.actions[#options.actions + 1] = {id = entry[1], text = entry[2], enabled = reader:available(entry[1]),
             callback = function() self:readerAction(entry[1]) end}
     end
-    options.actions[#options.actions + 1] = {id = "library", text = "Library", callback = function()
-        self:closeReaderViews(); self:showHome()
-    end}
-    options.actions[#options.actions + 1] = {id = "dictionary", text = "Dictionaries", callback = function()
-        self:closeReaderViews(); self:showNativeSetting("dictionary_lookup")
-    end}
     options.actions[#options.actions + 1] = {id = "assistant", text = "AI assistant", callback = function()
         self:closeReaderViews(); self:showAssistant()
+    end}
+    options.more_actions = {}
+    for _, entry in ipairs({{"search", "Search text"}, {"back", "Previous location"}, {"advanced", "Advanced"}}) do
+        options.more_actions[#options.more_actions + 1] = {id=entry[1],text=entry[2],enabled=reader:available(entry[1]),
+            callback=function() self:readerAction(entry[1]) end}
+    end
+    options.more_actions[#options.more_actions + 1] = {id = "library", text = "Library", callback = function()
+        self:closeReaderViews(); self:showHome()
+    end}
+    options.more_actions[#options.more_actions + 1] = {id = "dictionary", text = "Dictionaries", callback = function()
+        self:closeReaderViews(); self:showNativeSetting("dictionary_lookup")
     end}
     self.reader_panel = self:module("views/readerpanel"):new(options)
     UIManager:show(self.scope:own(self.reader_panel))
@@ -511,9 +549,11 @@ function AnxUI:showHome()
             load_source = function(source, collection) return self:getBookItems(source, collection) end,
             on_open_book = page_scope:guard(function(file) self:openBook(file) end),
             on_book_actions = page_scope:guard(function(file) self:showBookActions(file) end),
+            on_batch_actions = page_scope:guard(function(files) self:showBatchBookActions(files) end),
             theme = self:module("theme").shelf(self.settings:options()),
             new_theme = function() return self:module("theme").shelf(self.settings:options()) end,
             widgets = self:module("widgets"), translate = self.translate,
+            dialogs = self:module("dialogs"),
             on_preferences = function() self:showSettings() end,
             on_statistics = function() self:showStatistics() end,
             on_notes = function() self:showNoteLibrary() end,
@@ -522,6 +562,7 @@ function AnxUI:showHome()
             on_import = page_scope:guard(function() self:libraryImporter():choose(false) end),
             on_scan = page_scope:guard(function() self:libraryImporter():choose(true) end),
             on_rescan = page_scope:guard(function() self:libraryImporter():confirmScan(self:module("shelf").roots()) end),
+            on_manage_scan_roots = page_scope:guard(function() self:libraryImporter():showScanRoots() end),
             on_continue = function()
                 local file = G_reader_settings:readSetting("lastfile")
                 if file then self:openBook(file) end
@@ -662,6 +703,7 @@ function AnxUI:showSettings(group)
         end},
         {id = "classic", text = "Classic interface", callback = function() self:showNativeSetting("setting") end},
     }
+    if group then options.on_back = options.actions[1].callback end
     self.settings_view = self:module("views/readerlist"):new(options)
     UIManager:show(self.scope:own(self.settings_view))
 end
@@ -786,6 +828,7 @@ function AnxUI:showBookActions(file)
                     }
                     UIManager:show(self.home.scope:own(confirm))
                 end) },
+            { text = _("Select / manage books"), callback = action(function() self.home:selectFile(file) end) },
         },
     }
     local original_close = dialog.onCloseWidget
@@ -796,6 +839,173 @@ function AnxUI:showBookActions(file)
     end
     self.book_actions = dialog
     UIManager:show(self.home.scope:own(dialog))
+end
+
+-- Files are identities from the visible shelf, never document titles. Recheck
+-- their existence at execution time: a file may disappear while a menu is open.
+function AnxUI:applyBatchBookAction(files, operation, collection_name)
+    local stats = {changed=0, skipped=0, errors=0}
+    local lfs = require("libs/libkoreader-lfs")
+    local ffiUtil = require("ffi/util")
+    local shelf = self:module("shelf")
+    local valid, seen = {}, {}
+    for _, file in ipairs(files or {}) do
+        local real = type(file) == "string" and ffiUtil.realpath(file)
+        if not real or seen[real] or lfs.attributes(real, "mode") ~= "file" or not shelf.supported(real) then
+            stats.skipped = stats.skipped + 1
+        else
+            seen[real] = true
+            valid[#valid+1] = real
+        end
+    end
+    if operation == "complete" then
+        local DocSettings = require("docsettings")
+        local BookList = require("ui/widget/booklist")
+        for _, file in ipairs(valid) do
+            local ok, changed = pcall(function()
+                local settings = DocSettings:open(file)
+                local summary = require("util").tableDeepCopy(settings:readSetting("summary") or {})
+                if summary.status == "complete" then BookList.setBookInfoCache(file, settings); return false end
+                -- Keep ratings, progress, annotations and all other sidecar
+                -- data. This follows native status updates, but checks flush.
+                summary.status, summary.modified = "complete", os.date("%Y-%m-%d")
+                settings:saveSetting("summary", summary)
+                if not settings:flush() then error("sidecar_write_failed") end
+                BookList.setBookInfoCache(file, settings)
+                return true
+            end)
+            if not ok then
+                BookList.resetBookInfoCache(file)
+                stats.errors = stats.errors + 1
+            elseif changed then stats.changed = stats.changed + 1
+            else stats.skipped = stats.skipped + 1 end
+        end
+        return stats
+    end
+    local collections = require("readcollection")
+    if not collections.coll then collections:_read() end
+    if operation == "remove" then collection_name = shelf.collection(false) end
+    if (operation ~= "add" and operation ~= "remove") or not collection_name or not collections.coll[collection_name] then
+        stats.errors = #valid
+        return stats
+    end
+    local before = require("util").tableDeepCopy(collections.coll[collection_name])
+    for _, file in ipairs(valid) do
+        local ok, changed = pcall(function()
+            local member = collections:isFileInCollection(file, collection_name)
+            if operation == "add" then
+                if member then return false end
+                collections:addItem(file, collection_name)
+                return true
+            end
+            -- Remove exactly this collection membership. Never call the
+            -- native removeItems API, which removes all memberships.
+            return collections:removeItem(file, collection_name, true) == true
+        end)
+        if not ok then stats.errors = stats.errors + 1
+        elseif changed then stats.changed = stats.changed + 1
+        else stats.skipped = stats.skipped + 1 end
+    end
+    if stats.changed > 0 then
+        local saved = pcall(function()
+            collections:write({[collection_name]=true})
+            -- ReadCollection:write discards LuaSettings' write result, so
+            -- verify persisted membership before reporting batch success.
+            local path = require("datastorage"):getSettingsDir() .. "/collection.lua"
+            local persisted = require("luasettings"):open(path):readSetting(collection_name)
+            if type(persisted) ~= "table" then error("collection_write_failed") end
+            local members = {}
+            for _, item in ipairs(persisted) do members[item.file] = true end
+            for file in pairs(collections.coll[collection_name]) do
+                if not members[file] then error("collection_write_failed") end
+                members[file] = nil
+            end
+            if next(members) then error("collection_write_failed") end
+        end)
+        if not saved then
+            collections.coll[collection_name] = before
+            stats.errors, stats.changed = stats.errors + stats.changed, 0
+        end
+    end
+    return stats
+end
+
+function AnxUI:finishBatchBookAction(home, files, operation, collection_name)
+    if self.stopped or self.home ~= home or home.closed then return end
+    local stats = self:applyBatchBookAction(files, operation, collection_name)
+    self.last_batch_result = stats
+    if stats.errors == 0 or stats.changed > 0 then home:clearSelection() end
+    home:loadItems(); home:rebuild()
+    -- Refresh the native chooser's sort/status snapshot underneath the shelf.
+    if self.ui.file_chooser then self.ui.file_chooser:refreshPath() end
+    UIManager:show(home.scope:own(require("ui/widget/infomessage"):new{
+        text=string.format(self.translate("Updated %d books\nUnchanged or unavailable: %d\nFailed: %d"),
+            stats.changed, stats.skipped, stats.errors),
+    }))
+end
+
+function AnxUI:showBatchBookActions(files)
+    local home = self.home
+    if self.stopped or not home or home.closed or self.batch_actions_menu or type(files) ~= "table" or #files == 0 then return end
+    local selected = require("util").tableDeepCopy(files)
+    local _, menu = self.translate, nil
+    local function action(callback)
+        return home.scope:guard(function()
+            if self.home ~= home or not UIManager:isWidgetShown(menu) then return end
+            UIManager:close(menu); callback()
+        end)
+    end
+    local function confirm(operation)
+        local text = operation == "remove"
+            and _("Remove %d selected books from the bookshelf? Files, reading data and other collections will be kept.")
+            or _("Mark %d selected books as finished? Reading positions and annotations will be kept.")
+        local dialog
+        dialog = require("ui/widget/confirmbox"):new{
+            text=string.format(text, #selected),
+            ok_text=_(operation == "remove" and "Remove from bookshelf" or "Mark as finished"),
+            ok_callback=home.scope:guard(function()
+                if not UIManager:isWidgetShown(dialog) then return end
+                self:finishBatchBookAction(home,selected,operation)
+            end),
+        }
+        local original_close=dialog.onCloseWidget
+        dialog.onCloseWidget=function(widget)
+            if self.batch_confirmation==widget then self.batch_confirmation=nil end
+            if original_close then original_close(widget) end
+        end
+        self.batch_confirmation=dialog
+        UIManager:show(home.scope:own(dialog))
+    end
+    menu=require("ui/widget/menu"):new{title=string.format(_("Manage %d selected books"),#selected),item_table={
+        {text=_("Add to collection"),callback=action(function() self:showBatchCollections(home,selected) end)},
+        {text=_("Mark as finished"),callback=action(function() confirm("complete") end)},
+        {text=_("Remove from bookshelf"),callback=action(function() confirm("remove") end)},
+    }}
+    local original_close=menu.onCloseWidget
+    menu.onCloseWidget=function(widget)
+        if self.batch_actions_menu==widget then self.batch_actions_menu=nil end
+        if original_close then original_close(widget) end
+    end
+    self.batch_actions_menu=menu
+    UIManager:show(home.scope:own(menu))
+end
+
+function AnxUI:showBatchCollections(home, files)
+    if self.stopped or self.home ~= home or home.closed then return end
+    local menu, items = nil, {}
+    local internal = self:module("shelf").collection(false)
+    for _, name in ipairs(self:module("library").collections()) do
+        if name ~= internal then
+            items[#items+1]={text=name,callback=home.scope:guard(function()
+                if not UIManager:isWidgetShown(menu) then return end
+                UIManager:close(menu)
+                self:finishBatchBookAction(home,files,"add",name)
+            end)}
+        end
+    end
+    menu=require("ui/widget/menu"):new{title=self.translate("Add to collection"),item_table=items}
+    self.batch_collection_menu=menu
+    UIManager:show(home.scope:own(menu))
 end
 
 function AnxUI:openBook(file, after_open_callback)

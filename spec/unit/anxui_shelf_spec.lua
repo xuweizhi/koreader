@@ -124,4 +124,54 @@ describe("Anx persistent bookshelf import", function()
         assert.are.equal(0, stats.added); assert.is_string(reason)
         assert.is_nil(Collection.coll[name][root .. "/nested/same.epub"])
     end)
+
+    it("forgets scan roots across reload without removing imported books or their data", function()
+        local a, b = root .. "/same.epub", root .. "/nested/same.epub"
+        require("util").makePath(root .. "/same.sdr")
+        local sidecar = root .. "/same.sdr/metadata.epub.lua"
+        write(sidecar, 'return {last_xpointer="keep",annotations={{note="keep"}}}')
+        local original_note = read(sidecar)
+        run{roots={root, root .. "/nested"}}
+        local before = Shelf.rootInfo()
+        assert.are.equal(2, #before)
+        assert.is_true(before[1].available)
+        assert.is_number(before[1].last_scan)
+        assert.is_true(Shelf.removeRoot(root))
+        assert.is_false(Shelf.removeRoot(root))
+        Collection.coll, Collection.coll_settings, Collection.last_read_time = nil, nil, 0
+        Collection:_read()
+        assert.same({root .. "/nested"}, Shelf.roots())
+        assert.are.equal(before[2].last_scan, Shelf.rootInfo()[1].last_scan)
+        local name = assert(Shelf.collection(false))
+        assert.is_true(Collection:isFileInCollection(a, name))
+        assert.is_true(Collection:isFileInCollection(b, name))
+        assert.is_true(Shelf.removeRoot(root .. "/nested"))
+        assert.same({}, Shelf.roots())
+        assert.is_true(Collection:isFileInCollection(a, name))
+        assert.are.equal("first book", read(a)); assert.are.equal("second book", read(b))
+        assert.are.equal(original_note, read(sidecar))
+    end)
+
+    it("supports legacy roots without timestamps and allows forgetting missing folders", function()
+        run{files={root .. "/same.epub"}}
+        local name = Shelf.collection(false)
+        Collection.coll_settings[name].anxui_scan_roots = {root, root .. "/missing"}
+        Collection.coll_settings[name].anxui_scan_times = nil
+        Collection:write()
+        local info = Shelf.rootInfo()
+        assert.is_true(info[1].available); assert.is_nil(info[1].last_scan)
+        assert.is_false(info[2].available); assert.is_nil(info[2].last_scan)
+        assert.is_true(Shelf.removeRoot(root .. "/missing"))
+        assert.same({root}, Shelf.roots())
+    end)
+
+    it("keeps scan settings in memory when forgetting a folder cannot be persisted", function()
+        run{roots={root}}
+        local before, native_write = Shelf.rootInfo(), Collection.write
+        Collection.write = function() end
+        local removed = Shelf.removeRoot(root)
+        Collection.write = native_write
+        assert.is_false(removed)
+        assert.same(before, Shelf.rootInfo())
+    end)
 end)

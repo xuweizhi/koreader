@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--book", type=Path, required=True)
     parser.add_argument("--runtime", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
-    parser.add_argument("--scenario", choices=("baseline", "classic_home", "home", "components", "entry_points", "shelf_import", "library", "large_library", "replace", "resize", "startup", "startup_menu", "ai_chat", "ai_book", "ai_tools", "ai_live", "ai_context", "reader_tools", "note_index", "format", "advanced", "statistics", "settings_groups", "assistant", "plugins", "visual", "broken", "broken_classic", "file_actions", "roundtrip", "init_failure", "settings", "home_failure"), default="baseline")
+    parser.add_argument("--scenario", choices=("baseline", "classic_home", "home", "components", "entry_points", "shelf_import", "global_ui", "library", "large_library", "replace", "resize", "startup", "startup_menu", "ai_chat", "ai_book", "ai_tools", "ai_live", "ai_context", "reader_tools", "note_index", "format", "advanced", "statistics", "settings_groups", "assistant", "plugins", "visual", "broken", "broken_classic", "file_actions", "roundtrip", "init_failure", "settings", "home_failure"), default="baseline")
     parser.add_argument("--assistant-case", choices=("absent", "installed"), default="absent")
     parser.add_argument("--library-count", type=int, choices=(1000, 5000), default=5000)
     startup_cases = ("library", "classic", "last", "history", "favorites", "folder_shortcuts", "guide", "explicit_file", "explicit_dir", "recovery", "disabled", "missing_last", "native_library", "native_guide", "native_explicit_file", "native_explicit_dir", "native_recovery", "native_disabled")
@@ -106,7 +106,7 @@ def main():
     book = books / args.book.name
     shutil.copy2(args.book, book)
     (books / "empty").mkdir()
-    if args.scenario == "shelf_import":
+    if args.scenario in ("shelf_import", "global_ui"):
         import re
         scan = books / "scan"
         scan.mkdir()
@@ -241,6 +241,7 @@ def main():
     source_paths += [Path(__file__).with_name("visual-smoke.lua")]
     source_paths += [Path(__file__).with_name("entry-smoke.lua"), Path(__file__).with_name("shelf-smoke.lua")]
     source_paths += [Path(__file__).with_name("startup-menu-smoke.lua")]
+    source_paths += [Path(__file__).with_name("global-ui-smoke.lua"), Path(__file__).with_name("global-pages-smoke.lua")]
     source_paths += [Path(__file__).with_name("ai-chat-smoke.lua"), Path(__file__).with_name("ai-fixture-server.py")]
     source_paths += [Path(__file__).with_name("ai-context-smoke.lua"), Path(__file__).with_name("ai-live-smoke.lua"), Path(__file__).with_name("ai-experience-smoke.lua"), Path(__file__).with_name("ai-book-smoke.lua"), Path(__file__).with_name("ai-tools-smoke.lua")]
     result["source_files"] = {

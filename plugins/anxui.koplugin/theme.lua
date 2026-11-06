@@ -44,7 +44,7 @@ function Theme.shelf(options)
     local t = Theme.new(options)
     t.s = function(value) return Screen:scaleByDPI(value) end
     t.font = function(value) return value * Screen:scaleByDPI(100) / Screen:scaleBySize(100) end
-    t.touch, t.radius, t.nav_radius = t.s(44), t.s(12), t.s(32)
+    t.touch, t.radius, t.nav_radius = t.s(48), t.s(12), t.s(32)
     t.body, t.small = 14 * t.text_scale, 12 * t.text_scale
     return t
 end

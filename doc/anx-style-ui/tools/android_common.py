@@ -8,7 +8,13 @@ import shlex
 REPO = Path(__file__).resolve().parents[3]
 WORK = Path('/data/koreader-anx-work')
 SDK = REPO / 'base/toolchain/android-sdk-linux'
-AVD_ROOT = WORK / 'android-avd'
+LAB = os.environ.get('ANX_ANDROID_LAB', 'legacy')
+if LAB not in ('legacy', 'w50'):
+    raise RuntimeError('ANX_ANDROID_LAB must be legacy or w50')
+# The recovery lab has separate userdata, ownership and launch records. Its
+# explicit, fixed name prevents adopting an arbitrary AVD supplied by callers.
+AVD_ROOT = WORK / ('android-avd-w50' if LAB == 'w50' else 'android-avd')
+EMULATOR_EVIDENCE = WORK / ('evidence/W50-global-polish/emulator' if LAB == 'w50' else 'evidence/W35/emulator')
 AVD_NAME = 'anxui-api30'
 AVD = AVD_ROOT / (AVD_NAME + '.avd')
 STATE = AVD_ROOT / 'emulator.json'

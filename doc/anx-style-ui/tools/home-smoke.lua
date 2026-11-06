@@ -544,7 +544,7 @@ UIManager:scheduleIn(3.5, function() step(function()
         if scenario == "ai_book" then
             selectBook(fm,function(reader)
                 dofile("/data/koreader/doc/anx-style-ui/tools/ai-book-smoke.lua"){
-                    reader=reader,step=step,shot=shot,evidence=evidence,finish=finish,editNote=editNote,
+                    reader=reader,step=step,shot=shot,input=input,evidence=evidence,finish=finish,editNote=editNote,
                 }
             end)
             return
@@ -572,6 +572,13 @@ UIManager:scheduleIn(3.5, function() step(function()
         end
         if scenario == "shelf_import" or scenario == "shelf_reopen" then
             dofile("/data/koreader/doc/anx-style-ui/tools/shelf-smoke.lua"){
+                fm=fm, step=step, shot=shot, input=input, selectBook=selectBook,
+                finish=finish, evidence=evidence, book=book, scenario=scenario,
+            }
+            return
+        end
+        if scenario == "global_ui" then
+            dofile("/data/koreader/doc/anx-style-ui/tools/global-ui-smoke.lua"){
                 fm=fm, step=step, shot=shot, input=input, selectBook=selectBook,
                 finish=finish, evidence=evidence, book=book, scenario=scenario,
             }
@@ -837,6 +844,7 @@ UIManager:scheduleIn(3.5, function() step(function()
                 reader.anxui:showReaderPanel()
                 assert(reader.anxui.reader:snapshot().pages == reader.document:getPageCount())
                 shot("format-reading-tools")
+                reader.anxui.reader_panel.buttons.more.callback()
                 reader.anxui.reader_panel.buttons.advanced.callback()
                 shot("format-original-advanced")
                 reader.menu:onCloseReaderMenu()

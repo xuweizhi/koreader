@@ -30,6 +30,8 @@ function Home:init()
     self.sort, self.list_mode = state.sort or "native", state.list_mode == true
     self.selected_file = state.selected_file
     self.status, self.reverse = state.status, state.reverse == true
+    self.selection = {}
+    self.selection_mode = false
     self:loadItems()
     self.key_events.Close = { { Device.input.group.Back } }
     self.key_events.NextPage = { { Device.input.group.PgFwd } }
@@ -47,13 +49,57 @@ function Home:loadItems()
     if self.source_scope then self.source_scope:close() end
     self.source_scope = self.new_scope()
     self.item_table = self.load_source(self.source, self.collection)
+    self:loadResume()
     self.library.enrich(self.item_table, self.source_scope, self.source_scope:guard(function() self:rebuild() end))
     self:loadProgress()
+end
+
+function Home:loadResume()
+    self.resume_item, self.resume_progress = nil, nil
+    local file = G_reader_settings:readSetting("lastfile")
+    if type(file) ~= "string" or not self.library.signature(file) then return end
+    for _, item in ipairs(self.item_table) do
+        if item.file == file then self.resume_item = item; break end
+    end
+    if not self.resume_item then
+        self.resume_item = {file=file, text=file:match("([^/]+)$") or file}
+        self.library.enrich({self.resume_item}, self.source_scope, self.source_scope:guard(function() self:rebuild() end))
+    end
+    -- One book only: opening the shelf does not read every book's sidecar.
+    self.resume_progress = self.library.progress(file)
+end
+
+function Home:selectedFiles()
+    local files = {}
+    for file in pairs(self.selection) do files[#files + 1] = file end
+    table.sort(files)
+    return files
+end
+
+function Home:selectFile(file)
+    self.selection_mode = true
+    if file then self.selection[file] = true end
+    self.selected_file = file
+    self.focus_request = file and {file=file} or {control="select_page"}
+    self:rebuild()
+end
+
+function Home:toggleFile(file)
+    self.selection[file] = not self.selection[file] or nil
+    self.selected_file = file
+    self.focus_request = {file=file}
+    self:rebuild()
+end
+
+function Home:clearSelection()
+    self.selection_mode, self.selection = false, {}
+    if not self.closed then self:rebuild() end
 end
 
 function Home:setSource(source, collection)
     self.source, self.collection, self.query, self.page = source, collection, "", 1
     self.selected_file = nil
+    self.focus_request = {control="search"}
     self:loadItems()
     self:rebuild()
 end
@@ -79,6 +125,8 @@ end
 
 function Home:rebuild()
     if self.closed then return end
+    local focus = self.focus_request or self:focusTarget()
+    self.focus_request = nil
     if self[1] then self:clear() end
     if self.render_scope then self.render_scope:close() end
     self.render_scope = self.new_scope()
@@ -87,8 +135,9 @@ function Home:rebuild()
     local s = t.s
     local width, height = Screen:getWidth(), Screen:getHeight()
     self.dimen = Geom:new{w=width, h=height}
+    self.compact = height < s(300)
     self.wide = width > s(600) and height >= s(360 * t.text_scale)
-    local margin, gap, rail = s(20), s(20), self.wide and s(104) or 0
+    local margin, gap, rail = s(self.compact and 12 or 20), s(20), self.wide and s(104) or 0
     local x, control = margin + rail, t.touch
     local content_width = width - margin * 2 - rail
     local body = OverlapGroup:new{dimen=self.dimen:copy(), allow_mirroring=false}
@@ -98,45 +147,59 @@ function Home:rebuild()
         return widget
     end
     self.controls = {}
-    local search_width = content_width - 2 * control - s(16)
+    local search_width = content_width - 3 * control - s(24)
     local search = W.search(self.query == "" and _("Search books") or self.query, search_width, t,
         function() self:showSearch() end, self)
     local add = W.iconButton("plus", _("Add books"), t, function() self:showAddMenu() end, self)
     local sort = W.iconButton("appbar.menu", _("Sort and library options"), t, function() self:showOptions() end, self)
     place(search, x, margin)
-    place(add, width - margin - 2 * control - s(8), margin)
+    place(add, width - margin - 3 * control - s(16), margin)
     place(sort, width - margin - control, margin)
     self.controls.search, self.controls.add, self.controls.sort = search, add, sort
-    self.layout = {{search, add, sort}}
+    local sources = W.iconButton("appbar.filebrowser", _("Library sources and collections"), t,
+        function() self:showSources() end, self)
+    place(sources, width - margin - 2 * control - s(8), margin)
+    self.controls.sources = sources
+    self.layout = {{search, add, sources, sort}}
 
     local filter_y, filter_gap = margin + control + s(10), s(8)
-    local filter_width = math.floor((content_width - control - filter_gap * 3) / 3)
+    local compact_selection = self.compact or self.selection_mode and height < s(460 * t.text_scale)
+    local filter_width = math.floor((content_width - filter_gap * 3) / 4)
     local filters = {}
-    for index, entry in ipairs({{"complete", "Finished"}, {"reading", "In progress"}, {"new", "Not started"}}) do
-        local button = W.chip(_(entry[2]), filter_width, t, function() self:setStatus(entry[1]) end,
-            self.status == entry[1], self)
-        place(button, x + (index - 1) * (filter_width + filter_gap), filter_y)
+    for index, entry in ipairs({{"all", "All"}, {"reading", "In progress"}, {"complete", "Finished"}, {"new", "Not started"}}) do
+        local status = entry[1] ~= "all" and entry[1] or nil
+        local button = W.chip(_(entry[2]), filter_width, t, function() self:setStatus(status) end,
+            self.status == status, self)
+        if not compact_selection then place(button, x + (index - 1) * (filter_width + filter_gap), filter_y) end
         filters[#filters + 1] = button
         self.controls[entry[1]] = button
     end
-    local sources = W.iconButton("appbar.filebrowser", _("Library sources and collections"), t,
-        function() self:showSources() end, self)
-    place(sources, width - margin - control, filter_y)
-    filters[#filters + 1] = sources
-    self.controls.sources = sources
-    self.layout[#self.layout + 1] = filters
+    if not compact_selection then self.layout[#self.layout + 1] = filters end
     self.filtered = self.library.query(self.item_table, self.query, self.sort, self.status, self.reverse)
-    local top = filter_y + control + s(16)
-    if self.source ~= "library" then
+    local top = compact_selection and margin + control + s(12) or filter_y + control + s(16)
+    if self.source ~= "library" and not self.compact then
         local label = self.source == "recent" and _("Recent") or self.source == "favorites" and _("Favorites")
             or self.source == "collection" and self.collection or _("Current folder")
         place(W.text(label, t, t.small, content_width, false, true), x, top)
         top = top + s(26 * t.text_scale)
     end
-    local nav_height = math.max(control, s(52 * t.text_scale)) + s(12)
+    local batch_height = self.compact and control or 2 * control + s(20)
+    local nav_height = self.selection_mode and batch_height or self.compact and 0
+        or math.max(control, s(52 * t.text_scale)) + s(12)
     local footer_height = self.wide and control or s(18)
-    local footer_y = height - margin - footer_height - (self.wide and 0 or nav_height + s(6))
+    local footer_y = height - margin - footer_height - ((self.wide and not self.selection_mode) and 0 or nav_height + s(6))
     local available = math.max(control, footer_y - top - s(8))
+    if not self.selection_mode and self.source == "library" and self.query == "" and not self.status
+        and self.resume_item and self.library.signature(self.resume_item.file) and available > s(240 * t.text_scale) then
+        local resume_height = math.min(s(84 * t.text_scale), math.floor(available / 4))
+        local file = self.resume_item.file
+        self.controls.continue = W.resume(self.resume_item, self.resume_progress, content_width, resume_height, t, _,
+            self.render_scope:guard(function() self.on_open_book(file) end), self)
+        place(self.controls.continue, x, top)
+        self.layout[#self.layout + 1] = {self.controls.continue}
+        top = top + resume_height + s(12)
+        available = math.max(control, footer_y - top - s(8))
+    end
     local list_mode = self.list_mode or available < s(150 * t.text_scale)
     local columns = list_mode and 1 or math.max(1, math.floor((width - rail) / Screen:scaleByDPI(120 * t.text_scale)))
     local card_width = math.floor((content_width - (columns - 1) * gap) / columns)
@@ -153,6 +216,7 @@ function Home:rebuild()
     end
     local visible
     visible, self.page, self.page_count = self.library.page(self.filtered, self.page, self.perpage)
+    self.visible_items = visible
     self.cards = {}
     if #self.filtered == 0 then
         local empty = VerticalGroup:new{}
@@ -190,29 +254,76 @@ function Home:rebuild()
                     local card = W.Card:new{
                         item=item, theme=t, translate=_, width=card_width, height=card_height, show_parent=self,
                         list_mode=list_mode, progress=item.progress or self.library.progress(file),
-                        callback=self.render_scope:guard(function() return self.on_open_book(file) end),
+                        selection_mode=self.selection_mode, selected=self.selection[file] == true,
+                        callback=self.render_scope:guard(function()
+                            if self.selection_mode then return self:toggleFile(file) end
+                            return self.on_open_book(file)
+                        end),
+                        more_callback=self.render_scope:guard(function()
+                            if self.selection_mode then return self:toggleFile(file) end
+                            return self.on_book_actions(file)
+                        end),
                         hold_callback=self.render_scope:guard(function() return self.on_book_actions(file) end),
                     }
                     place(card, x + (column - 1) * (card_width + gap), top + (row - 1) * (card_height + row_gap))
                     focus_row[#focus_row + 1], self.cards[#self.cards + 1] = card, card
+                    focus_row[#focus_row + 1] = card.more_button
                 end
             end
             if #focus_row > 0 then self.layout[#self.layout + 1] = focus_row end
         end
     end
     local footer_inset = self.wide and control + gap or 0
+    local page_text = string.format("%d / %d  ·  %d %s", self.page, self.page_count, #self.filtered, _("books"))
+    if self.compact and self.selection_mode then
+        page_text = page_text .. "  ·  " .. string.format(_("Selected %d books"), #self:selectedFiles())
+    end
     place(CenterContainer:new{
         dimen=Geom:new{w=content_width - 2 * footer_inset, h=footer_height},
-        W.text(string.format("%d / %d  ·  %d %s", self.page, self.page_count, #self.filtered, _("books")),
+        W.text(page_text,
             t, 12 * t.text_scale, content_width - 2 * footer_inset, false, true),
     }, x + footer_inset, footer_y)
     if self.wide then
         local previous = W.iconButton("chevron.left", _("Previous page"), t, function() self:changePage(-1) end, self)
         local following = W.iconButton("chevron.right", _("Next page"), t, function() self:changePage(1) end, self)
         place(previous, x, footer_y); place(following, width - margin - control, footer_y)
+        self.controls.previous, self.controls.next = previous, following
         self.layout[#self.layout + 1] = {previous, following}
     end
 
+    if self.selection_mode then
+        local count = #self:selectedFiles()
+        local batch_y = height - margin - batch_height
+        local half = math.floor((content_width - s(8)) / 2)
+        local batch_columns = self.compact and 4 or 3
+        local batch_width = math.floor((content_width - (batch_columns-1) * s(8)) / batch_columns)
+        if not self.compact then
+            place(W.text(string.format(_("Selected %d books"), count), t, t.body, half, true), x, batch_y + s(12))
+        end
+        self.controls.select_page = W.button(_("Select this page"), self.compact and batch_width or half, t, function()
+            for _, item in ipairs(self.visible_items) do self.selection[item.file] = true end
+            self:rebuild()
+        end, {parent=self, enabled=#visible>0})
+        place(self.controls.select_page, self.compact and x or x + half + s(8), batch_y)
+        local batch_row = {}
+        if self.compact then batch_row[1] = self.controls.select_page end
+        local batch_actions = {
+            {"clear_selection", "Clear selection", function() self.selection = {}; self:rebuild() end, count>0},
+            {"batch_actions", "Batch actions", function() self.on_batch_actions(self:selectedFiles()) end, count>0 and self.on_batch_actions~=nil},
+            {"exit_selection", "Exit selection", function() self:clearSelection() end, true},
+        }
+        for index, entry in ipairs(batch_actions) do
+            local button = W.button(_(entry[2]), batch_width, t, self.scope:guard(entry[3]), {parent=self, enabled=entry[4], selected=entry[1]=="batch_actions"})
+            self.controls[entry[1]] = button
+            place(button, x + (index-(self.compact and 0 or 1))*(batch_width+s(8)),
+                self.compact and batch_y or batch_y + control + s(8))
+            batch_row[#batch_row+1] = button
+        end
+        if not self.compact then self.layout[#self.layout+1] = {self.controls.select_page} end
+        self.layout[#self.layout+1] = batch_row
+    end
+
+    if not self.compact and (self.wide or not self.selection_mode) then
     local entries = {{"Library", "book.opened", function() self:setSource("library") end}}
     if self.on_statistics then entries[#entries + 1] = {"Stats", "appbar.pageview", self.on_statistics} end
     if self.on_assistant then entries[#entries + 1] = {"AI", "star.full", self.on_assistant} end
@@ -227,6 +338,7 @@ function Home:rebuild()
             {selected=index == 1, parent=self})
         if self.wide and index > 1 then nav[#nav + 1] = VerticalSpan:new{width=s(14)} end
         nav[#nav + 1], nav_layout[#nav_layout + 1] = button, button
+        self.controls["nav_" .. entry[1]] = button
     end
     local nav_frame = FrameContainer:new{
         padding=s(6), bordersize=1, color=t.outline, background=t.surface, radius=t.nav_radius, nav,
@@ -234,12 +346,29 @@ function Home:rebuild()
     place(nav_frame, self.wide and margin or math.floor((width - nav_frame:getSize().w) / 2),
         self.wide and math.floor((height - nav_frame:getSize().h) / 2) or height - margin - nav_frame:getSize().h)
     self.layout[#self.layout + 1] = nav_layout
+    end
     self[1] = FrameContainer:new{padding=0, bordersize=0, background=t.background, body}
     self.selected = {x=1, y=1}
     if self.selected_file then
         for row, controls in ipairs(self.layout) do
             for column, widget in ipairs(controls) do
                 if widget.item and widget.item.file == self.selected_file then self.selected = {x=column, y=row} end
+            end
+        end
+    end
+    if focus then
+        for row, controls in ipairs(self.layout) do
+            for column, widget in ipairs(controls) do
+                if focus.control and widget == self.controls[focus.control]
+                    or focus.file and widget.item and widget.item.file == focus.file and not focus.more then
+                    self.selected = {x=column, y=row}
+                elseif focus.file and focus.more then
+                    for _, card in ipairs(self.cards) do
+                        if card.item.file == focus.file and widget == card.more_button then
+                            self.selected = {x=column, y=row}
+                        end
+                    end
+                end
             end
         end
     end
@@ -250,6 +379,20 @@ function Home:rebuild()
         for _, card in ipairs(self.cards) do if card.item == item then card:updateInfo(info) end end
     end))
     collectRetiredWidgets()
+end
+
+-- Async metadata completion and rotation replace widget objects. Keep the
+-- semantic target, rather than sending a hardware-key user back to Search.
+function Home:focusTarget()
+    local widget = self.layout and self.selected and self:getFocusItem()
+    if not widget then return end
+    for id, control in pairs(self.controls or {}) do
+        if widget == control then return {control=id} end
+    end
+    for _, card in ipairs(self.cards or {}) do
+        if widget == card then return {file=card.item.file} end
+        if widget == card.more_button then return {file=card.item.file, more=true} end
+    end
 end
 
 function Home:onSwipeShelf(_, gesture)
@@ -271,7 +414,28 @@ function Home:showMenu(title, entries)
             entry.callback()
         end)}
     end
-    menu = require("ui/widget/menu"):new{title=title, item_table=items}
+    local Menu = require("ui/widget/menu")
+    local theme = self.theme
+    menu = Menu:new{
+        title=title, item_table=items, items_per_page=1,
+        items_font_size=theme.font and theme.font(16 * theme.text_scale) or 16 * theme.text_scale,
+        _recalculateDimen=function(widget, no_recalculate_dimen)
+            Menu._recalculateDimen(widget, no_recalculate_dimen)
+            local rows = math.max(1, math.floor(widget.available_height / theme.s(48 * theme.text_scale)))
+            if widget.items_per_page ~= rows then
+                widget.items_per_page = rows
+                Menu._recalculateDimen(widget)
+            end
+        end,
+        onScreenResize=function(widget, dimen)
+            local focused = widget:getFocusItem()
+            local index = focused and focused.entry and focused.entry.idx or (widget.page-1)*widget.perpage+1
+            Menu.onScreenResize(widget, dimen)
+            widget.page = widget:getPageNumber(index)
+            widget:updateItems(index-(widget.page-1)*widget.perpage)
+            return false
+        end,
+    }
     local original_close = menu.onCloseWidget
     menu.onCloseWidget = function(widget)
         menu_scope:close()
@@ -289,6 +453,7 @@ function Home:showAddMenu()
         {text=_("Scan ebook folder"), callback=self.on_scan or function() end},
     }
     if self.on_rescan then entries[#entries + 1] = {text=_("Rescan saved folders"), callback=self.on_rescan} end
+    if self.on_manage_scan_roots then entries[#entries + 1] = {text=_("Manage scan folders"), callback=self.on_manage_scan_roots} end
     self:showMenu(_("Add books"), entries)
 end
 
@@ -308,6 +473,20 @@ end
 function Home:showOptions()
     local _ = self.translate
     local entries = {}
+    -- On a very short landscape screen the shelf keeps one full book row.
+    -- The displaced filters and navigation stay reachable from this menu.
+    if self.compact then
+        for __, entry in ipairs({{"Stats", self.on_statistics}, {"AI", self.on_assistant},
+                {"Notes", self.on_notes}, {"Settings", self.on_preferences}}) do
+            if entry[2] then entries[#entries+1] = {text=_(entry[1]), callback=entry[2]} end
+        end
+        for __, entry in ipairs({{"all", "All"}, {"reading", "In progress"}, {"complete", "Finished"}, {"new", "Not started"}}) do
+            local status = entry[1] ~= "all" and entry[1] or nil
+            entries[#entries+1] = {text=(self.status == status and "✓ " or "") .. _(entry[2]),
+                callback=function() self:setStatus(status) end}
+        end
+    end
+    if self.on_batch_actions then entries[#entries+1] = {text=_("Select books"), callback=function() self:selectFile() end} end
     for __, order in ipairs({{"title", "Title"}, {"author", "Author"}, {"recent", "Last read"},
             {"progress", "Reading progress"}, {"native", "Import order"}}) do
         entries[#entries + 1] = {text=(self.sort == order[1] and "✓ " or "") .. _(order[2]), callback=function()
@@ -326,7 +505,7 @@ function Home:showOptions()
     if self.on_continue then entries[#entries + 1] = {text=_("Continue reading"),
         enabled=G_reader_settings:readSetting("lastfile") ~= nil, callback=self.on_continue} end
     if self.on_sync then entries[#entries + 1] = {text=_("Sync settings"), callback=self.on_sync} end
-    entries[#entries + 1] = {text=_("Classic interface"), callback=function() self:onClose() end}
+    entries[#entries + 1] = {text=_("Classic interface"), callback=function() UIManager:close(self) end}
     self:showMenu(_("Sort and library options"), entries)
 end
 
@@ -367,13 +546,20 @@ function Home:showSearch()
             end },
         } },
     }
+    local original_close = dialog.onCloseWidget
+    dialog.onCloseWidget = function(widget)
+        if self.search_dialog == widget then self.search_dialog = nil end
+        if original_close then original_close(widget) end
+    end
     self.search_dialog = dialog
-    self.scope:own(dialog)
+    self.dialogs.own(self, dialog)
     UIManager:show(dialog)
     dialog:onShowKeyboard()
 end
 
 function Home:onSetDimensions()
+    local focus = self:focusTarget()
+    if focus and focus.file then self.selected_file = focus.file end
     self.theme = self.new_theme()
     self:rebuild()
 end
@@ -394,6 +580,7 @@ function Home:showError(message)
 end
 
 function Home:onClose()
+    if self.selection_mode then self:clearSelection(); return true end
     UIManager:close(self)
     return true
 end

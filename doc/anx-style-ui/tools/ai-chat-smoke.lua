@@ -24,13 +24,12 @@ return function(ctx)
         end)
     end
     local function send(text,callback)
-        chat:compose()
-        local dialog=assert(chat.compose_dialog)
-        dialog:setInputText(text)
-        local action=dialog.buttons[1][2].callback
+        chat:compose(text)
+        assert(chat.composer:getText()==text)
+        local action=chat.buttons.send.callback
         action()
         assert(chat.session.running,"Send did not start transport")
-        action() -- stale composer must never send again.
+        action() -- busy/stale send must never duplicate a turn.
         callback()
     end
     local function done()
@@ -65,7 +64,8 @@ return function(ctx)
             record("selected text captured without automatic request")
             ctx.step(function()
                 ctx.shot("ai-selected-text")
-                click(chat.buttons.Explain,function()
+                click(chat.buttons.tasks,function()
+                    chat.reading_actions.item_table[1].callback()
                     complete(function()
                         ctx.shot("ai-explain")
                         record("selected text explanation uses native highlight entry")
@@ -167,7 +167,7 @@ return function(ctx)
                             record("saved conversation restored after closing chat")
                             ctx.step(function()
                                 dofile("/data/koreader/doc/anx-style-ui/tools/ai-experience-smoke.lua"){
-                                    chat=chat,step=ctx.step,shot=ctx.shot,evidence=ctx.evidence,done=errorCases,
+                                    chat=chat,step=ctx.step,shot=ctx.shot,input=ctx.input,evidence=ctx.evidence,done=errorCases,
                                 }
                             end)
                         end)
@@ -204,7 +204,17 @@ return function(ctx)
             return
         end
         ctx.shot("ai-empty")
+        assert(not chat.buttons.retry and not chat.buttons.stop)
+        chat.composer:setText("未发送的中文草稿")
+        chat:rebuild()
+        assert(chat.composer:getText()=="未发送的中文草稿")
+        local sent,reason=chat:sendComposer()
+        assert(not sent and reason=="configure_ai")
+        assert(chat.profiles_menu and chat.composer:getText()=="未发送的中文草稿")
+        chat.profiles_menu:onClose()
+        record("inline draft survives redraw and missing-model validation")
         click(chat.buttons.settings,function()
+            assert(chat.profiles_menu).buttons.edit[1].callback()
             local dialog=assert(chat.config_dialog)
             for index,value in ipairs({assert(os.getenv("ANX_SMOKE_AI_URL")),"fixture-model","anx-fixture-key"}) do
                 dialog.input_fields[index]:setText(value)
@@ -212,7 +222,9 @@ return function(ctx)
             ctx.shot("ai-model-settings")
             dialog.buttons[1][2].callback()
             assert(chat.store:config().model=="fixture-model")
-            record("native configuration UI saves model and masks key")
+            assert(chat.composer:getText()=="未发送的中文草稿")
+            chat.composer:setText("")
+            record("native configuration UI saves model and masks key; draft retained")
             ctx.step(immediateClose)
         end)
     end)

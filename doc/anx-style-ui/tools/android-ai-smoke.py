@@ -9,7 +9,7 @@ import re
 import shutil
 import subprocess
 import time
-from android_common import apk_badging, check_apk_identity, owned_process
+from android_common import apk_badging, check_apk_identity, owned_process, LAB
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--apk', type=Path, required=True)
@@ -29,7 +29,7 @@ if not args.apk.is_relative_to(work) or not args.book.is_relative_to(work):
     parser.error('use isolated build and self-authored fixture paths')
 if not args.apk.is_file() or not args.book.is_file():
     parser.error('APK and fixture must be existing files')
-out = work / 'evidence/W46-ai-tools' / args.run_id
+out = work / ('evidence/W50-global-polish/android-ai' if LAB == 'w50' else 'evidence/W46-ai-tools') / args.run_id
 out.mkdir(parents=True, exist_ok=False)
 sdk = repo / 'base/toolchain/android-sdk-linux'
 adb = sdk / 'platform-tools/adb'
@@ -52,6 +52,11 @@ def run(*parts, timeout=40, check=True, binary=False, raw=False):
         commands.append({'command': invocation, 'exit_code': None, 'error': str(error)})
         raise
     commands.append({'command': invocation, 'exit_code': result.returncode})
+    if result.returncode:
+        for label in ('stdout', 'stderr'):
+            output = getattr(result, label)
+            if isinstance(output, bytes): output = output.decode(errors='replace')
+            if output: commands[-1][label] = output[-4096:]
     if check: result.check_returncode()
     return result if raw else result.stdout
 
@@ -110,8 +115,40 @@ def wait_foreground(directory, label, ours):
     raise TimeoutError('Android background/resume verification: ' + label + ' did not show ' + expected + ' within 45 seconds')
 
 
-launch = target_identity()
-if run('shell', 'getprop', 'sys.boot_completed').strip() != '1':
+def checked_preflight():
+    """Keep a failed W50 framework check reviewable before any installation."""
+    observation = {'passed': False, 'lab': LAB, 'checks': {}}
+    try:
+        launch = target_identity()
+        observation['launch'] = launch
+        for name, command in (
+                ('boot', ('shell', 'getprop', 'sys.boot_completed')),
+                ('system_server', ('shell', 'pidof', 'system_server')),
+                ('network_stack', ('shell', 'pidof', 'com.android.networkstack.process')),
+                ('window', ('shell', 'wm', 'size'))):
+            response = run(*command, timeout=15, check=False, raw=True)
+            value = response.stdout.strip()
+            healthy = (value == '1' if name == 'boot' else
+                       'Physical size:' in value if name == 'window' else value.isdigit())
+            observation['checks'][name] = {'exit_code': response.returncode,
+                                           'stdout': response.stdout[-4096:], 'stderr': response.stderr[-4096:]}
+            if response.returncode or not healthy:
+                raise RuntimeError('Android framework preflight failed: ' + name)
+        observation['passed'] = True
+    except Exception as error:
+        observation['error'] = str(error)
+    (out / 'preflight.json').write_text(json.dumps(observation, ensure_ascii=False, indent=2) + '\n')
+    if not observation['passed']:
+        failure = {'passed': False, 'stage': 'preflight', 'lab': LAB, 'phases': [],
+                   'error': observation['error'], 'preflight': observation, 'commands': commands}
+        (out / 'result.json').write_text(json.dumps(failure, ensure_ascii=False, indent=2) + '\n')
+        print(json.dumps({'passed': False, 'stage': 'preflight', 'result': str(out / 'result.json')}))
+        raise SystemExit(1)
+    return launch
+
+
+launch = checked_preflight() if LAB == 'w50' else target_identity()
+if LAB != 'w50' and run('shell', 'getprop', 'sys.boot_completed').strip() != '1':
     parser.error('wait for emulator boot completion')
 args.previous = args.previous.resolve()
 for apk in (args.previous, args.apk):
@@ -131,7 +168,7 @@ service = fixture.AIService()
 port = service.server.server_port
 result = {'passed': False, 'apk': str(args.apk), 'sha256': record['sha256'], 'previous': str(args.previous),
           'backend': 'owned Android 11 / API30 x86_64 emulator; dummy credential and local SSE service',
-          'phases': [], 'cleared_app_data': False, 'resumed_ui': args.resume_ui, 'reopen_only': args.reopen_only}
+          'phases': [], 'lab': LAB, 'launch': launch, 'cleared_app_data': False, 'resumed_ui': args.resume_ui, 'reopen_only': args.reopen_only}
 source = out / 'source'; source.mkdir()
 for name in ('android-ai-smoke.py', 'android-ai-smoke.lua', 'android_common.py', 'ai-fixture-server.py'):
     shutil.copy2(Path(__file__).with_name(name), source / name)
@@ -215,14 +252,33 @@ try:
     result['passed'] = True
 except Exception as error:
     result['error'] = str(error)
-    (out / 'failure-logcat.log').write_text(run('logcat', '-d', '-v', 'threadtime'))
-    (out / 'failure.png').write_bytes(run('exec-out', 'screencap', '-p', binary=True))
+    for filename, command, binary in (
+            ('failure-logcat.log', ('logcat', '-d', '-v', 'threadtime'), False),
+            ('failure.png', ('exec-out', 'screencap', '-p'), True)):
+        try:
+            output = run(*command, binary=binary)
+            if binary: (out / filename).write_bytes(output)
+            else: (out / filename).write_text(output)
+        except Exception as diagnostic_error:
+            result.setdefault('diagnostic_errors', []).append(str(diagnostic_error))
 finally:
+    cleanup = []
     if prepared:
-        run('shell', 'am', 'force-stop', package)
-        run('shell', 'mv', '/sdcard/koreader/patches/2-anx-ai-test.lua', '/sdcard/koreader/patches/2-anx-ai-test.lua.disabled', check=False)
-    run('reverse', '--remove', 'tcp:' + str(port), check=False)
-    service.close()
+        cleanup.extend((('shell', 'am', 'force-stop', package),
+                        ('shell', 'mv', '/sdcard/koreader/patches/2-anx-ai-test.lua',
+                         '/sdcard/koreader/patches/2-anx-ai-test.lua.disabled')))
+    cleanup.append(('reverse', '--remove', 'tcp:' + str(port)))
+    for command in cleanup:
+        try:
+            run(*command)
+        except Exception as cleanup_error:
+            result.setdefault('cleanup_errors', []).append(str(cleanup_error))
+            result['passed'] = False
+    try:
+        service.close()
+    except Exception as cleanup_error:
+        result.setdefault('cleanup_errors', []).append(str(cleanup_error))
+        result['passed'] = False
     result['fixture_requests'] = len(service.requests)
     result['commands'] = commands
     (out / 'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')

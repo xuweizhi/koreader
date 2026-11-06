@@ -6,6 +6,11 @@ return function(context)
     local Event = require("ui/event")
     local plugin = assert(reader.anxui)
     local first_anchor, stale_row_callback
+    local ux = {checks={},geometry={}}
+    local function saveUX()
+        local file = assert(io.open(context.evidence .. "/reader-tools-ux.json", "w"))
+        file:write(require("json").encode(ux)); file:close()
+    end
     local function shownInput()
         for index = #UIManager._window_stack, 1, -1 do
             local widget = UIManager._window_stack[index].widget
@@ -30,6 +35,89 @@ return function(context)
         reader.menu:onCloseReaderMenu()
         entry.callback()
         return assert(plugin.reader_panel)
+    end
+    local function tool(id)
+        local view = panel()
+        for __ = 1, 2 do
+            for ___ = 1, view.page_count do
+                if view.buttons[id] then return view.buttons[id] end
+                view:onNextPage()
+            end
+            view.buttons.more.callback()
+        end
+        error("reader tool unavailable: " .. id)
+    end
+    local function verifyPanelUX(done)
+        local view = assert(plugin.reader_panel)
+        local original_width, original_height = Screen:getWidth(), Screen:getHeight()
+        local original_page, note_count = reader:getCurrentPage(), #reader.annotation.annotations
+        local thread
+        local function resume(...)
+            local ok, err = coroutine.resume(thread, ...); assert(ok, err)
+        end
+        local function send(actions)
+            input(actions, function(...) resume(...) end)
+            coroutine.yield()
+        end
+        local function tap(widget)
+            UIManager:forceRePaint()
+            local d = assert(widget.dimen)
+            send({{kind="click",x=math.floor(d.x+d.w/2),y=math.floor(d.y+d.h/2)}})
+        end
+        local function inspect(label)
+            UIManager:forceRePaint()
+            local rectangles = {}
+            for _, row in ipairs(view.layout) do
+                for _, widget in ipairs(row) do
+                    local d = assert(widget.dimen)
+                    assert(d.x>=0 and d.y>=0 and d.x+d.w<=Screen:getWidth() and d.y+d.h<=Screen:getHeight(),
+                        label .. ": tool outside screen")
+                    assert(d.w>=Screen:scaleByDPI(48) and d.h>=Screen:scaleByDPI(48), label .. ": touch target too small")
+                    rectangles[#rectangles+1] = {x=d.x,y=d.y,w=d.w,h=d.h,text=widget.text}
+                end
+            end
+            assert(view:getFocusItem(), "reader panel lost keyboard focus")
+            ux.geometry[label] = rectangles; shot(label); saveUX()
+        end
+        local function inspectPages(label, expected)
+            local found = {}
+            repeat
+                inspect(label .. "-" .. view.page)
+                for _, id in ipairs(expected) do if view.buttons[id] then found[id]=true end end
+                if view.page == view.page_count then break end
+                tap(view.buttons.next)
+            until false
+            for _, id in ipairs(expected) do assert(found[id], "reader action lost: " .. id) end
+        end
+        thread = coroutine.create(function()
+            inspectPages("reader-common", {"toc","progress","notes","layout","bookmark","assistant"})
+            tap(view.buttons.more)
+            inspectPages("reader-more", {"search","back","advanced","library","dictionary"})
+            tap(view.buttons.more)
+            send({{kind="resize",width=640,height=220}})
+            assert(Screen:getWidth()==640 and Screen:getHeight()==220)
+            assert(view.page_count>1, "short landscape did not paginate tools")
+            inspectPages("reader-short-landscape", {"toc","progress","notes","layout","bookmark","assistant"})
+            tap(view.buttons.more)
+            inspectPages("reader-short-more", {"search","back","advanced","library","dictionary"})
+            tap(view.buttons.more)
+            send({{kind="resize",width=original_width,height=original_height}})
+            inspect("reader-restored")
+            assert(reader:getCurrentPage()==original_page and #reader.annotation.annotations==note_count,
+                "toolbar resize changed reading state")
+            send({{kind="click",x=1,y=1}})
+            assert(not plugin.reader_panel, "tap outside did not close tools")
+            assert(reader:getCurrentPage()==original_page and #reader.annotation.annotations==note_count)
+            view=panel()
+            send({{kind="key",value="Down"}})
+            assert(view:getFocusItem())
+            send({{kind="key",value="Escape"}})
+            assert(not plugin.reader_panel and reader:getCurrentPage()==original_page)
+            ux.checks = {common_and_more_reachable=true,short_landscape_pagination=true,
+                restore_state=true,tap_outside=true,keyboard_focus_and_back=true}
+            ux.passed=true; saveUX(); done()
+        end)
+        resume()
     end
     local function notes()
         panel().buttons.notes.callback()
@@ -227,7 +315,7 @@ return function(context)
                 step(function()
                     assert(reader:getCurrentPage() == chapter.page)
                     shot("chapter-target")
-                    panel().buttons.back.callback()
+                    tool("back").callback()
                     step(function()
                         assert(reader:getCurrentPage() == original_page, "chapter jump lost native return history")
                         progress()
@@ -249,7 +337,7 @@ return function(context)
             assert(not plugin.reader_panel)
             shot("original-reading-settings")
             reader.config:onCloseConfigMenu()
-            panel().buttons.advanced.callback()
+            tool("advanced").callback()
             step(function()
                 shot("original-advanced-menu")
                 reader.menu:onCloseReaderMenu()
@@ -271,7 +359,7 @@ return function(context)
     panel()
     step(function()
         shot("anx-reader-toolbar")
-        input({{kind = "key", value = "Escape"}}, function()
+        verifyPanelUX(function()
             assert(not plugin.reader_panel)
             local before = reader:getCurrentPage()
             input({{kind = "click", x = math.floor(Screen:getWidth() * .9), y = math.floor(Screen:getHeight() * .5)}}, function()

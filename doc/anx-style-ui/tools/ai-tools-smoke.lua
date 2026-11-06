@@ -25,7 +25,11 @@ return function(ctx)
             checks[#checks+1]="report, hierarchical mind map and two-column translation rendered"
             return save()
         end
-        chat:readingActions();chat.reading_actions.item_table[index].callback()
+        chat:readingActions()
+        local title=chat.translate(({"Reading report","Mind map","Parallel translation"})[index])
+        local action
+        for _,entry in ipairs(chat.reading_actions.item_table) do if entry.text==title then action=entry end end
+        assert(action,"missing reading task: "..title).callback()
         wait(function() return not chat.session.running end,function()
             local messages=chat.session.data.messages
             assert(messages[#messages].status=="complete")
@@ -77,7 +81,7 @@ return function(ctx)
                     chat.index_search.buttons[1][2].callback()
                     wait(function() return not chat.context_loading end,function()
                         local context=assert(chat.session.data.context)
-                        assert(#context.sources>=2 and context.kind=="collection" and not chat.session.data.book)
+                        assert(#context.sources>=2 and context.kind=="collection" and chat.session.data.book.file==copy)
                         local target
                         for index,ref in ipairs(context.sources) do if ref.file==original then target=index;break end end
                         assert(target)

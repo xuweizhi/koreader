@@ -1,5 +1,6 @@
 local Button = require("ui/widget/button")
 local CenterContainer = require("ui/widget/container/centercontainer")
+local Device = require("device")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
@@ -132,6 +133,37 @@ end
 
 local Card = InputContainer:extend{}
 
+local Resume = InputContainer:extend{}
+function Resume:init()
+    local t, s = self.theme, self.theme.s
+    self.dimen = Geom:new{w=self.width,h=self.height}
+    local inner = self.width - 2*s(12)
+    local percent = math.floor(math.max(0,math.min(1,tonumber(self.progress and self.progress.percent) or 0))*100+.5)
+    local title = self.item.title or self.item.text:gsub("%.[^%.]+$", "")
+    local progress_width = s(48*t.text_scale)
+    local heading = Widgets.text(self.translate("Continue reading"),t,12*t.text_scale,inner-progress_width-s(8),true,true)
+    local row = HorizontalGroup:new{
+        heading,HorizontalSpan:new{width=math.max(s(8),inner-progress_width-heading:getSize().w)},
+        Widgets.text(tostring(percent).."%",t,12*t.text_scale,progress_width,true,true),
+    }
+    self.frame = FrameContainer:new{padding=s(12),bordersize=0,radius=t.radius,background=t.selected,
+        focusable=true,focus_inner_border=true,focus_border_size=math.max(1,s(2)),
+        CenterContainer:new{dimen=Geom:new{w=inner,h=self.height-2*s(12)},
+            VerticalGroup:new{align="left",row,VerticalSpan:new{width=s(4)},
+                Widgets.text(title,t,14*t.text_scale,inner,true)},
+        },
+    }
+    self[1] = self.frame
+    self.ges_events.TapResume = {GestureRange:new{ges="tap",range=self.dimen}}
+end
+function Resume:onTapResume() self.callback();return true end
+function Resume:onFocus() self.frame:onFocus();UIManager:setDirty(self.show_parent,"ui",self.dimen);return true end
+function Resume:onUnfocus() self.frame:onUnfocus();UIManager:setDirty(self.show_parent,"ui",self.dimen);return true end
+function Widgets.resume(item,progress,width,height,theme,translate,callback,parent)
+    return Resume:new{item=item,progress=progress,width=width,height=height,theme=theme,
+        translate=translate,callback=callback,show_parent=parent}
+end
+
 -- Clip the bitmap corners inside its own box; FrameContainer rounds only the
 -- background, not its child image. No full-screen offscreen buffer is needed.
 local CoverFrame = FrameContainer:extend{}
@@ -156,7 +188,9 @@ function Card:init()
     local meta_height = s(60 * t.text_scale)
     local cover_height = math.max(s(40), self.list_mode and self.height or self.height - meta_height)
     local cover_width = self.list_mode and math.floor(cover_height * .65) or self.width
-    local text_width = self.list_mode and self.width - cover_width - s(12) or self.width
+    local action_size = math.max(t.touch,Device.screen:scaleByDPI(48))
+    local text_width = self.list_mode and self.width - cover_width - s(12) - action_size - s(4) or self.width
+    text_width = math.max(s(32),text_width)
     local title_text = self.info and self.info.title or self.item.title or self.item.text:gsub("%.[^%.]+$", "")
     local author = self.info and self.info.authors or self.item.authors or self.translate("Unknown author")
     local cover_content, cover_background
@@ -176,6 +210,7 @@ function Card:init()
         local contents = require("ui/widget/overlapgroup"):new{
             dimen=Geom:new{w=cover_width, h=cover_height}, allow_mirroring=false,
         }
+        if cover_width-2*pad>=s(20) and cover_height-2*pad>=s(20) then
         local title = TextBoxWidget:new{
             text=title_text, face=Widgets.face(t, 14 * t.text_scale), bold=true,
             fgcolor=t.ink, bgcolor=cover_background, width=cover_width - 2 * pad,
@@ -183,12 +218,15 @@ function Card:init()
         }
         title.overlap_offset = {pad, pad}
         contents[1] = title
+        end
         if cover_height > s(130) then
-            local icon = IconWidget:new{icon="book.opened", alpha=true,
-                width=s(44), height=s(44)}
-            icon.overlap_offset = {cover_width - s(54), cover_height - s(72)}
-            contents[#contents + 1] = icon
-            local name = Widgets.text(author, t, 10 * t.text_scale, cover_width - 2 * pad, false, true)
+            if cover_height > s(180) then
+                local icon = IconWidget:new{icon="book.opened", alpha=true,
+                    width=s(44), height=s(44)}
+                icon.overlap_offset = {cover_width - s(54), cover_height - action_size - s(52)}
+                contents[#contents + 1] = icon
+            end
+            local name = Widgets.text(author, t, 10 * t.text_scale, math.max(1,cover_width-action_size-2*pad), false, true)
             name.overlap_offset = {pad, cover_height - s(24 * t.text_scale)}
             contents[#contents + 1] = name
         end
@@ -226,13 +264,29 @@ function Card:init()
         background=t.background, radius=s(8), focusable=true,
         focus_inner_border=true, focus_border_size=math.max(1, s(2)), content,
     }
-    self[1] = self.frame
+    if not self.more_button then
+        self.more_button = Button:new{
+            text=self.selection_mode and (self.selected and "✓" or "☐") or "⋯",
+            width=action_size,height=action_size,padding=0,bordersize=self.selected and 2 or 0,
+            color=t.accent,radius=t.radius,background=self.selected and t.selected or t.surface,
+            text_font_size=t.font and t.font(20) or 20,
+            callback=self.more_callback,show_parent=self.show_parent,
+        }
+    end
+    self.more_wrap = FrameContainer:new{padding=0,bordersize=0,self.more_button}
+    local overlay = require("ui/widget/overlapgroup"):new{dimen=self.dimen:copy(),allow_mirroring=false,self.frame,self.more_wrap}
+    self.frame.overlap_offset = {0,0}
+    self.more_wrap.overlap_offset = {self.width-action_size,self.list_mode and math.max(0,math.floor((self.height-action_size)/2))
+        or math.max(0,cover_height-action_size)}
+    self[1] = overlay
     self.ges_events.TapCard = {GestureRange:new{ges="tap", range=self.dimen}}
     self.ges_events.HoldCard = {GestureRange:new{ges="hold", range=self.dimen}}
 end
 
 function Card:updateInfo(info)
     local focused = self.frame._focused
+    -- Preserve the explicitly focusable action button referenced by Home.layout.
+    if self.more_wrap then self.more_wrap[1] = nil end
     self:clear()
     local position = self.dimen:copy()
     self.info = info
@@ -273,20 +327,23 @@ local Row = InputContainer:extend{}
 
 function Row:init()
     local t, entry = self.theme, self.entry
-    local padding = t.s(12)
+    local line_height=t.s(24*t.text_scale)
+    local padding = math.min(t.s(12),math.max(t.s(4),math.floor((self.height-line_height)/2)))
     local inner = self.width - 2 * padding
     self.dimen = Geom:new{w = self.width, h = self.height}
     local title = entry.text
     if title == "" then title = self.translate("Bookmark") end
-    local note_height = entry.has_note and t.s(28 * t.text_scale) or 0
+    local show_subtitle=self.height>=2*padding+line_height+t.s(20*t.text_scale)
+    local show_note=entry.has_note and self.height>=2*padding+line_height+t.s(48*t.text_scale)
+    local note_height = show_note and t.s(28 * t.text_scale) or 0
     local content = VerticalGroup:new{align = "left",
         TextBoxWidget:new{
-            text = title, face = Font:getFace("cfont", t.body), fgcolor = t.ink, bgcolor = t.surface,
-            width = inner, height = math.max(t.s(24), self.height - 2 * padding - t.s(24 * t.text_scale) - note_height),
+            text = title, face = Widgets.face(t,t.body), fgcolor = t.ink, bgcolor = t.surface,
+            width = inner, height = self.height - 2 * padding - (show_subtitle and t.s(24 * t.text_scale) or 0) - note_height,
             height_overflow_show_ellipsis = true,
         },
     }
-    if entry.has_note then
+    if show_note then
         table.insert(content, Widgets.text(self.translate("Note") .. ": " .. entry.note, t, t.body, inner))
     end
     local type_label, type_icon
@@ -296,7 +353,7 @@ function Row:init()
     end
     local subtitle = entry.subtitle or ((type_label or self.translate("Bookmark"))
         .. " · " .. (entry.page_label or entry.page or "") .. (entry.datetime and " · " .. entry.datetime or ""))
-    if type_icon then
+    if show_subtitle and type_icon then
         -- Cross-book subtitles contain the book name; keep the note type explicit.
         if entry.subtitle then subtitle = type_label .. " · " .. subtitle end
         local icon_size, gap = t.s(20), t.s(4)
@@ -305,7 +362,7 @@ function Row:init()
             self.type_icon, HorizontalSpan:new{width = gap},
             Widgets.text(subtitle, t, t.small, inner - icon_size - gap, false, true),
         })
-    else
+    elseif show_subtitle then
         table.insert(content, Widgets.text(subtitle, t, t.small, inner, false, true))
     end
     self.frame = FrameContainer:new{width = self.width, height = self.height, padding = padding,
